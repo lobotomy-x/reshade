@@ -43,3 +43,5 @@ Thumbs.db
 /res/[Vv]ersion.h
 /setup/*.ini
 /setup/Properties/AssemblyInfo.cs
+/setup
+/1. choose overall install location .txt

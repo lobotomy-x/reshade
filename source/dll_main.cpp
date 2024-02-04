@@ -85,7 +85,7 @@ std::filesystem::path get_base_path(bool default_to_target_executable_path = fal
 	if (GetEnvironmentVariableW(L"RESHADE_BASE_PATH_OVERRIDE", buf, ARRAYSIZE(buf)) && resolve_env_path(result = buf))
 		return result;
 
-	return default_to_target_executable_path ? g_target_executable_path.parent_path() : g_reshade_dll_path.parent_path();
+	return g_reshade_dll_path.parent_path();
 }
 
 /// <summary>

@@ -878,7 +878,7 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 	// Detect high network traffic
 	extern volatile long g_network_traffic;
 
-	static int cooldown = 0, traffic = 0;
+/*	static int cooldown = 0, traffic = 0;
 	if (cooldown-- > 0)
 	{
 		traffic += g_network_traffic > 0;
@@ -889,7 +889,7 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 		addon_enabled = traffic < 10;
 		traffic = 0;
 		cooldown = 60;
-
+		*/
 #if RESHADE_FX
 		if (addon_enabled != was_enabled)
 		{
@@ -900,15 +900,15 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 			{
 				if (info.second.first == _effect_color_srv[0] && info.second.second == _effect_color_srv[1])
 					continue;
-
+				addon_enabled = true;
 				update_texture_bindings(info.first.c_str(), addon_enabled ? info.second.first : api::resource_view { 0 }, addon_enabled ? info.second.second : api::resource_view { 0 });
 			}
 		}
 #endif
 	}
 
-	if (std::numeric_limits<long>::max() != g_network_traffic)
-		g_network_traffic = 0;
+	//if (std::numeric_limits<long>::max() != g_network_traffic)
+	//	g_network_traffic = 0;
 #endif
 }
 
