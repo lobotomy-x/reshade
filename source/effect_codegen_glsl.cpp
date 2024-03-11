@@ -62,6 +62,12 @@ private:
 	bool _uses_componentwise_and = false;
 	bool _uses_componentwise_cond = false;
 
+	static inline char to_digit(unsigned int value)
+	{
+		assert(value < 10);
+		return '0' + static_cast<char>(value);
+	}
+
 	void write_result(module &module) override
 	{
 		module = std::move(_module);
@@ -156,9 +162,9 @@ private:
 			break;
 		case type::t_bool:
 			if (type.cols > 1)
-				s += "mat" + std::to_string(type.rows) + 'x' + std::to_string(type.cols);
+				s += "mat", s += to_digit(type.rows), s += 'x', s += to_digit(type.cols);
 			else if (type.rows > 1)
-				s += "bvec" + std::to_string(type.rows);
+				s += "bvec", s += to_digit(type.rows);
 			else
 				s += "bool";
 			break;
@@ -167,7 +173,7 @@ private:
 			{
 				assert(type.cols == 1);
 				if (type.rows > 1)
-					s += "i16vec" + std::to_string(type.rows);
+					s += "i16vec", s += to_digit(type.rows);
 				else
 					s += "int16_t";
 				break;
@@ -177,9 +183,9 @@ private:
 			[[fallthrough]];
 		case type::t_int:
 			if (type.cols > 1)
-				s += "mat" + std::to_string(type.rows) + 'x' + std::to_string(type.cols);
+				s += "mat", s += to_digit(type.rows), s += 'x', s += to_digit(type.cols);
 			else if (type.rows > 1)
-				s += "ivec" + std::to_string(type.rows);
+				s += "ivec", s += to_digit(type.rows);
 			else
 				s += "int";
 			break;
@@ -188,7 +194,7 @@ private:
 			{
 				assert(type.cols == 1);
 				if (type.rows > 1)
-					s += "u16vec" + std::to_string(type.rows);
+					s += "u16vec", s += to_digit(type.rows);
 				else
 					s += "uint16_t";
 				break;
@@ -198,9 +204,9 @@ private:
 			[[fallthrough]];
 		case type::t_uint:
 			if (type.cols > 1)
-				s += "mat" + std::to_string(type.rows) + 'x' + std::to_string(type.cols);
+				s += "mat", s += to_digit(type.rows), s += 'x', s += to_digit(type.cols);
 			else if (type.rows > 1)
-				s += "uvec" + std::to_string(type.rows);
+				s += "uvec", s += to_digit(type.rows);
 			else
 				s += "uint";
 			break;
@@ -209,7 +215,7 @@ private:
 			{
 				assert(type.cols == 1);
 				if (type.rows > 1)
-					s += "f16vec" + std::to_string(type.rows);
+					s += "f16vec", s += to_digit(type.rows);
 				else
 					s += "float16_t";
 				break;
@@ -219,9 +225,9 @@ private:
 			[[fallthrough]];
 		case type::t_float:
 			if (type.cols > 1)
-				s += "mat" + std::to_string(type.rows) + 'x' + std::to_string(type.cols);
+				s += "mat", s += to_digit(type.rows), s += 'x', s += to_digit(type.cols);
 			else if (type.rows > 1)
-				s += "vec" + std::to_string(type.rows);
+				s += "vec", s += to_digit(type.rows);
 			else
 				s += "float";
 			break;
@@ -543,7 +549,7 @@ private:
 	std::string semantic_to_builtin(std::string name, const std::string &semantic, shader_type stype) const
 	{
 		if (semantic == "SV_POSITION")
-			return stype == shader_type::ps ? "gl_FragCoord" : "gl_Position";
+			return stype == shader_type::pixel ? "gl_FragCoord" : "gl_Position";
 		if (semantic == "SV_POINTSIZE")
 			return "gl_PointSize";
 		if (semantic == "SV_DEPTH")
@@ -822,33 +828,33 @@ private:
 		return info.definition;
 	}
 
-	void define_entry_point(function_info &func, shader_type stype, int num_threads[3]) override
+	void define_entry_point(function_info &func) override
 	{
 		// Modify entry point name so each thread configuration is made separate
-		if (stype == shader_type::cs)
+		if (func.shader_type == shader_type::compute)
 			func.unique_name = 'E' + func.unique_name +
-				'_' + std::to_string(num_threads[0]) +
-				'_' + std::to_string(num_threads[1]) +
-				'_' + std::to_string(num_threads[2]);
+				'_' + std::to_string(func.num_threads[0]) +
+				'_' + std::to_string(func.num_threads[1]) +
+				'_' + std::to_string(func.num_threads[2]);
 
 		if (std::find_if(_module.entry_points.begin(), _module.entry_points.end(),
 				[&func](const entry_point &ep) { return ep.name == func.unique_name; }) != _module.entry_points.end())
 			return;
 
-		_module.entry_points.push_back({ func.unique_name, stype });
+		_module.entry_points.push_back({ func.unique_name, func.shader_type });
 
 		_blocks.at(0) += "#ifdef ENTRY_POINT_" + func.unique_name + '\n';
-		if (stype == shader_type::cs)
-			_blocks.at(0) += "layout(local_size_x = " + std::to_string(num_threads[0]) +
-			                      ", local_size_y = " + std::to_string(num_threads[1]) +
-			                      ", local_size_z = " + std::to_string(num_threads[2]) + ") in;\n";
+		if (func.shader_type == shader_type::compute)
+			_blocks.at(0) += "layout(local_size_x = " + std::to_string(func.num_threads[0]) +
+			                      ", local_size_y = " + std::to_string(func.num_threads[1]) +
+			                      ", local_size_z = " + std::to_string(func.num_threads[2]) + ") in;\n";
 
 		function_info entry_point;
 		entry_point.return_type = { type::t_void };
 
 		std::unordered_map<std::string, std::string> semantic_to_varying_variable;
 
-		const auto create_varying_variable = [this, stype, &semantic_to_varying_variable](type type, unsigned int extra_qualifiers, const std::string &name, const std::string &semantic) {
+		const auto create_varying_variable = [this, stype = func.shader_type, &semantic_to_varying_variable](type type, unsigned int extra_qualifiers, const std::string &name, const std::string &semantic) {
 			// Skip built in variables
 			if (!semantic_to_builtin(std::string(), semantic, stype).empty())
 				return;
@@ -1012,7 +1018,7 @@ private:
 									code += '(';
 								}
 
-								code += semantic_to_builtin(std::move(in_param_name), member.semantic, stype);
+								code += semantic_to_builtin(std::move(in_param_name), member.semantic, func.shader_type);
 
 								if (member.type.is_boolean())
 									code += ')';
@@ -1105,7 +1111,7 @@ private:
 						code += '(';
 					}
 
-					code += semantic_to_builtin("_in_param" + std::to_string(i), func.parameter_list[i].semantic, stype);
+					code += semantic_to_builtin("_in_param" + std::to_string(i), func.parameter_list[i].semantic, func.shader_type);
 
 					if (param_type.is_boolean())
 						code += ')';
@@ -1125,7 +1131,7 @@ private:
 		// All other output types can write to the output variable directly
 		else if (!func.return_type.is_void())
 		{
-			code += semantic_to_builtin("_return", func.return_semantic, stype);
+			code += semantic_to_builtin("_return", func.return_semantic, func.shader_type);
 			code += " = ";
 		}
 
@@ -1191,7 +1197,7 @@ private:
 						else
 						{
 							code += '\t';
-							code += semantic_to_builtin("_out_param" + std::to_string(i) + '_' + std::to_string(a) + '_' + member.name, member.semantic, stype);
+							code += semantic_to_builtin("_out_param" + std::to_string(i) + '_' + std::to_string(a) + '_' + member.name, member.semantic, func.shader_type);
 							code += " = ";
 
 							if (member.type.is_boolean())
@@ -1248,7 +1254,7 @@ private:
 				else
 				{
 					code += '\t';
-					code += semantic_to_builtin("_out_param" + std::to_string(i), func.parameter_list[i].semantic, stype);
+					code += semantic_to_builtin("_out_param" + std::to_string(i), func.parameter_list[i].semantic, func.shader_type);
 					code += " = ";
 
 					if (param_type.is_boolean())
@@ -1277,13 +1283,13 @@ private:
 			for (const struct_member_info &member : definition.member_list)
 			{
 				code += '\t';
-				code += semantic_to_builtin("_return_" + member.name, member.semantic, stype);
+				code += semantic_to_builtin("_return_" + member.name, member.semantic, func.shader_type);
 				code += " = _return." + escape_name(member.name) + ";\n";
 			}
 		}
 
 		// Add code to flip the output vertically
-		if (_flip_vert_y && stype == shader_type::vs)
+		if (_flip_vert_y && func.shader_type == shader_type::vertex)
 			code += "\tgl_Position.y = -gl_Position.y;\n";
 
 		leave_block_and_return(0);
@@ -1333,10 +1339,14 @@ private:
 				{
 					if (op.swizzle[1] < 0)
 					{
-						const int row = (op.swizzle[0] % 4);
-						const int col = (op.swizzle[0] - row) / 4;
+						const char row = (op.swizzle[0] % 4);
+						const char col = (op.swizzle[0] - row) / 4;
 
-						expr_code += '[' + std::to_string(row) + "][" + std::to_string(col) + ']';
+						expr_code += '[';
+						expr_code += '1' + row - 1;
+						expr_code += "][";
+						expr_code += '1' + col - 1;
+						expr_code += ']';
 					}
 					else
 					{
@@ -1348,7 +1358,7 @@ private:
 				else
 				{
 					expr_code += '.';
-					for (unsigned int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
+					for (int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
 						expr_code += "xyzw"[op.swizzle[i]];
 				}
 				break;
@@ -1415,10 +1425,14 @@ private:
 				{
 					if (op.swizzle[1] < 0)
 					{
-						const int row = (op.swizzle[0] % 4);
-						const int col = (op.swizzle[0] - row) / 4;
+						const char row = (op.swizzle[0] % 4);
+						const char col = (op.swizzle[0] - row) / 4;
 
-						code += '[' + std::to_string(row) + "][" + std::to_string(col) + ']';
+						code += '[';
+						code += '1' + row - 1;
+						code += "][";
+						code += '1' + col - 1;
+						code += ']';
 					}
 					else
 					{
@@ -1430,7 +1444,7 @@ private:
 				else
 				{
 					code += '.';
-					for (unsigned int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
+					for (int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
 						code += "xyzw"[op.swizzle[i]];
 				}
 				break;

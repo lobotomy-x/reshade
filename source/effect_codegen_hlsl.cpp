@@ -53,6 +53,12 @@ private:
 	bool _uses_bitwise_cast = false;
 	bool _uses_bitwise_intrinsics = false;
 
+	static inline char to_digit(unsigned int value)
+	{
+		assert(value < 10);
+		return '0' + static_cast<char>(value);
+	}
+
 	void write_result(module &module) override
 	{
 		module = std::move(_module);
@@ -320,76 +326,76 @@ private:
 			s += id_to_name(type.definition);
 			return;
 		case type::t_sampler1d_int:
-			s += "__sampler1D";
-			if (_shader_model >= 40)
-				s += "_int" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
-			return;
 		case type::t_sampler2d_int:
-			s += "__sampler2D";
-			if (_shader_model >= 40)
-				s += "_int" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
-			return;
 		case type::t_sampler3d_int:
-			s += "__sampler3D";
+			s += "__sampler";
+			s += to_digit(type.texture_dimension());
+			s += 'D';
 			if (_shader_model >= 40)
-				s += "_int" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			{
+				s += "_int";
+				if (type.rows > 1)
+					s += to_digit(type.rows);
+			}
 			return;
 		case type::t_sampler1d_uint:
-			s += "__sampler1D";
-			if (_shader_model >= 40)
-				s += "_uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
-			return;
 		case type::t_sampler2d_uint:
-			s += "__sampler2D";
-			if (_shader_model >= 40)
-				s += "_uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
-			return;
 		case type::t_sampler3d_uint:
-			s += "__sampler3D";
+			s += "__sampler";
+			s += to_digit(type.texture_dimension());
+			s += 'D';
 			if (_shader_model >= 40)
-				s += "_uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			{
+				s += "_uint";
+				if (type.rows > 1)
+					s += to_digit(type.rows);
+			}
 			return;
 		case type::t_sampler1d_float:
-			s += "__sampler1D";
-			if (_shader_model >= 40)
-				s += "_float" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
-			return;
 		case type::t_sampler2d_float:
-			s += "__sampler2D";
-			if (_shader_model >= 40)
-				s += "_float" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
-			return;
 		case type::t_sampler3d_float:
-			s += "__sampler3D";
+			s += "__sampler";
+			s += to_digit(type.texture_dimension());
+			s += 'D';
 			if (_shader_model >= 40)
-				s += "_float" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			{
+				s += "_float";
+				if (type.rows > 1)
+					s += to_digit(type.rows);
+			}
 			return;
 		case type::t_storage1d_int:
-			s += "RWTexture1D<int" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
-			return;
 		case type::t_storage2d_int:
-			s += "RWTexture2D<int" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
-			return;
 		case type::t_storage3d_int:
-			s += "RWTexture3D<int" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			s += "RWTexture";
+			s += to_digit(type.texture_dimension());
+			s += "D<";
+			s += "int";
+			if (type.rows > 1)
+				s += to_digit(type.rows);
+			s += '>';
 			return;
 		case type::t_storage1d_uint:
-			s += "RWTexture1D<uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
-			return;
 		case type::t_storage2d_uint:
-			s += "RWTexture2D<uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
-			return;
 		case type::t_storage3d_uint:
-			s += "RWTexture3D<uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			s += "RWTexture";
+			s += to_digit(type.texture_dimension());
+			s += "D<";
+			s += "uint";
+			if (type.rows > 1)
+				s += to_digit(type.rows);
+			s += '>';
 			return;
 		case type::t_storage1d_float:
-			s += "RWTexture1D<float" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
-			return;
 		case type::t_storage2d_float:
-			s += "RWTexture2D<float" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
-			return;
 		case type::t_storage3d_float:
-			s += "RWTexture3D<float" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			s += "RWTexture";
+			s += to_digit(type.texture_dimension());
+			s += "D<";
+			s += "float";
+			if (type.rows > 1)
+				s += to_digit(type.rows);
+			s += '>';
 			return;
 		default:
 			assert(false);
@@ -397,9 +403,9 @@ private:
 		}
 
 		if (type.rows > 1)
-			s += std::to_string(type.rows);
+			s += to_digit(type.rows);
 		if (type.cols > 1)
-			s += 'x' + std::to_string(type.cols);
+			s += 'x', s += to_digit(type.cols);
 	}
 	void write_constant(std::string &s, const type &data_type, const constant &data) const
 	{
@@ -710,14 +716,18 @@ private:
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding + 0) + ", 2)]] "; // Descriptor set 2
 
-			code += "Texture" + std::to_string(static_cast<unsigned int>(info.type)) + "D<";
+			code += "Texture";
+			code += to_digit(static_cast<unsigned int>(info.type));
+			code += "D<";
 			write_texture_format(code, info.format);
 			code += "> __"     + info.unique_name + " : register(t" + std::to_string(info.binding + 0) + "); \n";
 
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding + 1) + ", 2)]] "; // Descriptor set 2
 
-			code += "Texture" + std::to_string(static_cast<unsigned int>(info.type)) + "D<";
+			code += "Texture";
+			code += to_digit(static_cast<unsigned int>(info.type));
+			code += "D<";
 			write_texture_format(code, info.format);
 			code += "> __srgb" + info.unique_name + " : register(t" + std::to_string(info.binding + 1) + "); \n";
 		}
@@ -778,17 +788,19 @@ private:
 
 			const unsigned int texture_dimension = info.type.texture_dimension();
 
-			code += "sampler" + std::to_string(texture_dimension) + "D __" + info.unique_name + "_s : register(s" + std::to_string(info.binding) + ");\n";
+			code += "sampler";
+			code += to_digit(texture_dimension);
+			code += "D __" + info.unique_name + "_s : register(s" + std::to_string(info.binding) + ");\n";
 
 			write_location(code, loc);
 
 			code += "static const ";
 			write_type(code, info.type);
-			code += ' ' + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float" + std::to_string(texture_dimension) + '(';
+			code += ' ' + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float" + to_digit(texture_dimension) + '(';
 
 			if (tex_info.semantic.empty())
 			{
-				code += "1.0 / " + std::to_string(tex_info.width);
+					code +=   "1.0 / " + std::to_string(tex_info.width);
 				if (texture_dimension >= 2)
 					code += ", 1.0 / " + std::to_string(tex_info.height);
 				if (texture_dimension >= 3)
@@ -997,14 +1009,14 @@ private:
 		return info.definition;
 	}
 
-	void define_entry_point(function_info &func, shader_type stype, int num_threads[3]) override
+	void define_entry_point(function_info &func) override
 	{
 		// Modify entry point name since a new function is created for it below
-		if (stype == shader_type::cs)
+		if (func.shader_type == shader_type::compute)
 			func.unique_name = 'E' + func.unique_name +
-				'_' + std::to_string(num_threads[0]) +
-				'_' + std::to_string(num_threads[1]) +
-				'_' + std::to_string(num_threads[2]);
+				'_' + std::to_string(func.num_threads[0]) +
+				'_' + std::to_string(func.num_threads[1]) +
+				'_' + std::to_string(func.num_threads[2]);
 		else if (_shader_model < 40)
 			func.unique_name = 'E' + func.unique_name;
 
@@ -1012,10 +1024,10 @@ private:
 				[&func](const entry_point &ep) { return ep.name == func.unique_name; }) != _module.entry_points.end())
 			return;
 
-		_module.entry_points.push_back({ func.unique_name, stype });
+		_module.entry_points.push_back({ func.unique_name, func.shader_type });
 
 		// Only have to rewrite the entry point function signature in shader model 3 and for compute (to write "numthreads" attribute)
-		if (_shader_model >= 40 && stype != shader_type::cs)
+		if (_shader_model >= 40 && func.shader_type != shader_type::compute)
 			return;
 
 		function_info entry_point = func;
@@ -1030,7 +1042,7 @@ private:
 
 		std::string position_variable_name;
 		{
-			if (func.return_type.is_struct() && stype == shader_type::vs)
+			if (func.return_type.is_struct() && func.shader_type == shader_type::vertex)
 			{
 				// If this function returns a struct which contains a position output, keep track of its member name
 				for (const struct_member_info &member : get_struct(func.return_type.definition).member_list)
@@ -1045,14 +1057,14 @@ private:
 			}
 			if (is_position_semantic(func.return_semantic))
 			{
-				if (stype == shader_type::vs)
+				if (func.shader_type == shader_type::vertex)
 					// Keep track of the position output variable
 					position_variable_name = id_to_name(ret);
 			}
 		}
 		for (struct_member_info &param : entry_point.parameter_list)
 		{
-			if (param.type.is_struct() && stype == shader_type::vs)
+			if (param.type.is_struct() && func.shader_type == shader_type::vertex)
 			{
 				for (const struct_member_info &member : get_struct(param.type.definition).member_list)
 					if (is_position_semantic(member.semantic))
@@ -1065,20 +1077,20 @@ private:
 			}
 			if (is_position_semantic(param.semantic))
 			{
-				if (stype == shader_type::vs)
+				if (func.shader_type == shader_type::vertex)
 					// Keep track of the position output variable
 					position_variable_name = param.name;
-				else if (stype == shader_type::ps)
+				else if (func.shader_type == shader_type::pixel)
 					// Change the position input semantic in pixel shaders
 					param.semantic = "VPOS";
 			}
 		}
 
-		if (stype == shader_type::cs)
+		if (func.shader_type == shader_type::compute)
 			_blocks.at(_current_block) += "[numthreads(" +
-				std::to_string(num_threads[0]) + ", " +
-				std::to_string(num_threads[1]) + ", " +
-				std::to_string(num_threads[2]) + ")]\n";
+				std::to_string(func.num_threads[0]) + ", " +
+				std::to_string(func.num_threads[1]) + ", " +
+				std::to_string(func.num_threads[2]) + ")]\n";
 
 		define_function({}, entry_point);
 		enter_block(create_block());
@@ -1126,7 +1138,7 @@ private:
 		// Cast the output value to a four-component vector
 		if (is_color_semantic(func.return_semantic))
 		{
-			for (unsigned int i = 0; i < 4 - func.return_type.rows; i++)
+			for (unsigned int i = 0; i < (4 - func.return_type.rows); i++)
 				code += ", 0.0";
 			code += ')';
 		}
@@ -1134,7 +1146,7 @@ private:
 		code += ";\n";
 
 		// Shift everything by half a viewport pixel to workaround the different half-pixel offset in D3D9 (https://aras-p.info/blog/2016/04/08/solving-dx9-half-pixel-offset/)
-		if (!position_variable_name.empty() && stype == shader_type::vs) // Check if we are in a vertex shader definition
+		if (!position_variable_name.empty() && func.shader_type == shader_type::vertex) // Check if we are in a vertex shader definition
 			code += '\t' + position_variable_name + ".xy += __TEXEL_SIZE__ * " + position_variable_name + ".ww;\n";
 
 		leave_block_and_return(func.return_type.is_void() ? 0 : ret);
@@ -1185,7 +1197,7 @@ private:
 				break;
 			case expression::operation::op_swizzle:
 				expr_code += '.';
-				for (unsigned int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
+				for (int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
 					if (op.from.is_matrix())
 						expr_code += s_matrix_swizzles[op.swizzle[i]];
 					else
@@ -1242,7 +1254,7 @@ private:
 				break;
 			case expression::operation::op_swizzle:
 				code += '.';
-				for (unsigned int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
+				for (int i = 0; i < 4 && op.swizzle[i] >= 0; ++i)
 					if (op.from.is_matrix())
 						code += s_matrix_swizzles[op.swizzle[i]];
 					else

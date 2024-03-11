@@ -205,6 +205,12 @@ namespace ReShade.Setup
 
 			foreach (string source in Directory.EnumerateFiles(sourcePath))
 			{
+				string ext = Path.GetExtension(source);
+				if (ext == ".addon" || ext == ".addon32" || ext == ".addon64")
+				{
+					continue;
+				}
+
 				string target = targetPath + source.Replace(sourcePath, string.Empty);
 
 				File.Copy(source, target, true);
@@ -1423,6 +1429,12 @@ In that event here are some steps you can try to resolve this:
 					}
 				}
 
+				// Delete add-ons
+				foreach (string addonFile in Directory.EnumerateFiles(Path.GetDirectoryName(currentInfo.targetPath), currentInfo.is64Bit ? "*.addon64" : "*.addon32", SearchOption.TopDirectoryOnly))
+				{
+					File.Delete(addonFile);
+				}
+
 				// Delete all other existing ReShade installations too
 				foreach (string conflictingModuleName in new[] { "d3d9.dll", "d3d10.dll", "d3d11.dll", "d3d12.dll", "dxgi.dll", "opengl32.dll" })
 				{
@@ -1673,6 +1685,7 @@ In that event here are some steps you can try to resolve this:
 			string ext = Path.GetExtension(new Uri(addon.DownloadUrl).AbsolutePath);
 
 			string tempPath = null;
+			string tempPathEffects = null;
 
 			if (ext != ".addon" && ext != ".addon32" && ext != ".addon64")
 			{
@@ -1693,7 +1706,7 @@ In that event here are some steps you can try to resolve this:
 					string addonPath = Directory.EnumerateFiles(tempPath, currentInfo.is64Bit ? "*.addon64" : "*.addon32", SearchOption.AllDirectories).FirstOrDefault();
 					if (addonPath == null)
 					{
-						addonPath = Directory.EnumerateFiles(tempPath, "*.addon").FirstOrDefault(x => x.Contains(currentInfo.is64Bit ? "x64" : "x86"));
+						addonPath = Directory.EnumerateFiles(tempPath, "*.addon").FirstOrDefault(x => x.Contains(currentInfo.is64Bit ? "x64" : "x86") || Path.GetFileNameWithoutExtension(x).EndsWith(currentInfo.is64Bit ? "64" : "32"));
 					}
 					if (addonPath == null)
 					{
@@ -1704,6 +1717,12 @@ In that event here are some steps you can try to resolve this:
 					}
 
 					downloadPath = addonPath;
+
+					// Check for any effect files to install
+					IEnumerable<string> effects = Directory.EnumerateFiles(tempPath, "*.fx", SearchOption.TopDirectoryOnly);
+					effects = effects.Concat(Directory.EnumerateFiles(tempPath, "*.addonfx", SearchOption.TopDirectoryOnly));
+
+					tempPathEffects = effects.Select(x => Path.GetDirectoryName(x)).OrderBy(x => x.Length).FirstOrDefault();
 				}
 				catch (SystemException ex)
 				{
@@ -1712,18 +1731,27 @@ In that event here are some steps you can try to resolve this:
 				}
 			}
 
-			string targetAddonPath = Path.GetDirectoryName(currentInfo.targetPath);
+			string basePath = Path.GetDirectoryName(currentInfo.configPath);
+			string targetPathAddon = Path.GetDirectoryName(currentInfo.targetPath);
+			string targetPathEffects = Path.GetFullPath(Path.Combine(basePath, addon.EffectInstallPath));
 
-			string globalConfigPath = Path.Combine(targetAddonPath, "ReShade.ini");
+			string globalConfigPath = Path.Combine(targetPathAddon, "ReShade.ini");
 			if (File.Exists(globalConfigPath))
 			{
 				var globalConfig = new IniFile(globalConfigPath);
-				targetAddonPath = globalConfig.GetString("ADDON", "AddonPath", targetAddonPath);
+				targetPathAddon = globalConfig.GetString("ADDON", "AddonPath", targetPathAddon);
 			}
 
 			try
 			{
-				File.Copy(downloadPath, Path.Combine(targetAddonPath, Path.GetFileNameWithoutExtension(tempPath != null ? downloadPath : new Uri(addon.DownloadUrl).AbsolutePath) + (currentInfo.is64Bit ? ".addon64" : ".addon32")), true);
+				File.Copy(downloadPath, Path.Combine(targetPathAddon, Path.GetFileNameWithoutExtension(tempPath != null ? downloadPath : new Uri(addon.DownloadUrl).AbsolutePath) + (currentInfo.is64Bit ? ".addon64" : ".addon32")), true);
+
+				if (tempPathEffects != null)
+				{
+					MoveFiles(tempPathEffects, targetPathEffects);
+
+					WriteSearchPaths(addon.EffectInstallPath, null);
+				}
 
 				File.Delete(downloadPath);
 				if (tempPath != null)
