@@ -20,7 +20,13 @@ static void on_init(effect_runtime *runtime)
 
 	s_runtimes.push_back(runtime);
 
-	reshade::get_config_value(nullptr, "ADDON", "SyncEffectRuntimes", s_sync);
+	if (!reshade::get_config_value(nullptr, "ADDON", "SyncEffectRuntimes", s_sync))
+		// Enable synchronization by default if application is using VR
+#ifndef _WIN64
+		s_sync = GetModuleHandleW(L"vrclient.dll") != nullptr || GetModuleHandleW(L"openxr_loader.dll") != nullptr;
+#else
+		s_sync = GetModuleHandleW(L"vrclient_x64.dll") != nullptr || GetModuleHandleW(L"openxr_loader.dll") != nullptr;
+#endif
 }
 static void on_destroy(effect_runtime *runtime)
 {
@@ -150,6 +156,20 @@ static bool on_reshade_reorder_techniques(effect_runtime *runtime, size_t count,
 	return false;
 }
 
+static void apply_preset_to_all(effect_runtime *runtime)
+{
+	char preset_path[256] = "";
+	runtime->get_current_preset_path(preset_path);
+
+	for (effect_runtime *const synced_runtime : s_runtimes)
+	{
+		if (synced_runtime == runtime)
+			continue;
+
+		synced_runtime->set_current_preset_path(preset_path);
+	}
+}
+
 static void draw_settings_overlay(effect_runtime *runtime)
 {
 	const std::unique_lock<std::shared_mutex> lock(s_mutex);
@@ -163,21 +183,14 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	}
 
 	if (ImGui::Button("Apply preset of this effect runtime to all other instances", ImVec2(-1, 0)))
-	{
-		char preset_path[256] = "";
-		runtime->get_current_preset_path(preset_path);
-
-		for (effect_runtime *const synced_runtime : s_runtimes)
-		{
-			if (synced_runtime == runtime)
-				continue;
-
-			synced_runtime->set_current_preset_path(preset_path);
-		}
-	}
+		apply_preset_to_all(runtime);
 
 	if (ImGui::Checkbox("Synchronize effect runtimes", &s_sync))
+	{
 		reshade::set_config_value(nullptr, "ADDON", "SyncEffectRuntimes", s_sync);
+		if (s_sync)
+			apply_preset_to_all(runtime);
+	}
 
 	if (!s_sync)
 		return;
