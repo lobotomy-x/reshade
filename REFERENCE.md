@@ -1,333 +1,720 @@
-ReShade API
-===========
+ReShade FX shading language
+===========================
 
-The ReShade API lets you interact with the resources and rendering commands of applications ReShade was loaded into. It [abstracts](#events) away differences between the various graphics API ReShade supports (Direct3D 9/10/11/12, OpenGL and Vulkan), to make it possible to write add-ons that work across a wide range of applications, regardless of the graphics API they use.
+The ReShade FX shading language is heavily based on the DX9-style HLSL syntax, with a few extensions. For more details on HLSL, check out the Programming Guide: https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-writing-shaders-9 .\
+This document will instead primarily focus on syntax and features that are unique to ReShade FX.
 
-A ReShade add-on is a DLL or part of the application that uses the header-only ReShade API to register callbacks for events and do work in those callbacks after they were invoked by ReShade. There are no further requirements, no functions need to be exported and no libraries need to be linked against (although linking against ReShade is supported as well by defining `RESHADE_API_LIBRARY` before including the headers if so desired). Simply add the [include directory from the ReShade repository](https://github.com/crosire/reshade/tree/main/include) to your project and include the `reshade.hpp` header to get started.
+* [Macros](#macros)
+* [Texture object](#texture-object)
+* [Sampler object](#sampler-object)
+* [Storage object](#storage-object)
+* [Uniform variables](#uniform-variables)
+* [Structs](#structs)
+* [Namespaces](#namespaces)
+* [User functions](#user-functions)
+* [Intrinsic functions](#intrinsic-functions)
+* [Techniques](#techniques)
 
-An add-on may optionally export an `AddonInit` function if more complicated one-time initialization than possible in `DllMain` is required. It will be called by ReShade right after loading the add-on module.
-```cpp
-extern "C" __declspec(dllexport) bool AddonInit(HMODULE addon_module, HMODULE reshade_module)
+## Macros
+
+The ReShade FX compiler predefines certain preprocessor macros, as listed below:
+* ``__FILE__`` Current file path
+* ``__FILE_NAME__`` Current file name without path
+* ``__FILE_STEM__`` Current file name without extension and path
+* ``__LINE__`` Current line number
+* ``__RESHADE__`` Version of the injector (in the format `MAJOR * 10000 + MINOR * 100 + REVISION`)
+* ``__APPLICATION__`` 32-bit truncated Fnv1a hash of the application executable name
+* ``__VENDOR__`` Vendor id (e.g. 0x10de for NVIDIA, 0x1002 for AMD)
+* ``__DEVICE__`` Device id
+* ``__RENDERER__`` Graphics API used to render effects
+  * D3D9: 0x9000
+  * D3D10: 0xa000 or higher
+  * D3D11: 0xb000 or higher (e.g. 0xb100 for D3D11.1)
+  * D3D12: 0xc000 or higher
+  * OpenGL: 0x10000 or higher (e.g. 0x14300 for OpenGL 4.3)
+  * Vulkan: 0x20000 or higher (e.g. 0x21100 for Vulkan 1.1)
+* ``BUFFER_WIDTH`` Backbuffer width (essentially the width of the image the application renders to the screen)
+* ``BUFFER_HEIGHT`` Backbuffer height
+* ``BUFFER_RCP_WIDTH`` Reciprocal of the backbuffer width (equals `1.0 / BUFFER_WIDTH`)
+* ``BUFFER_RCP_HEIGHT`` Reciprocal of the backbuffer height (equals `1.0 / BUFFER_HEIGHT`)
+* ``BUFFER_COLOR_BIT_DEPTH`` Color bit depth of the backbuffer (8 or 10)
+* ``BUFFER_COLOR_SPACE`` Color space type for presentation; 0 = unknown, 1 = sRGB, 2 = scRGB, 3 = HDR10 ST2084, 4 = HDR10 HLG.
+
+Additionally every enabled addon will cause a ``ADDON_[NAME]`` definition to be defined for it.
+Therefore the built-in addons "Generic Depth" and "Effect Runtime Sync" will cause the ``ADDON_GENERIC_DEPTH`` and ``ADDON_EFFECT_RUNTIME_SYNC`` definitions to be set, unless they have been turned off.
+
+Constructs like the following may be interpreted as a configurable UI option. To prevent this, the preprocessor define name can be prefixed with an underscore or made shorter than 8 characters, in which case ReShade will not display it in the UI.
+```c
+#ifndef MY_PREPROCESSOR_DEFINE
+	#define MY_PREPROCESSOR_DEFINE 0
+#endif
+```
+
+You can disable optimization during shader compilation by adding this line to an effect file:
+```c
+#pragma reshade skipoptimization
+```
+
+## Texture Object
+
+Textures are multidimensional data containers usually used to store images.
+Declared textures are created at runtime with the parameters specified in their definition body.
+
+#### Annotations:
+
+ * ``texture2D imageTex < source = "path/to/image.bmp"; > { ... };``  
+   Opens image from the patch specified, resizes it to the texture size and loads it into the texture.\
+   ReShade supports Bitmap (\*.bmp), Portable Network Graphics (\*.png), JPEG (\*.jpg), Targa Image (\*.tga) and DirectDraw Surface (\*.dds) files.
+ * ``texture2D myTex1 < pooled = true; > { Width = 100; Height = 100; Format = RGBA8; };``  
+ ``texture2D myTex2 < pooled = true; > { Width = 100; Height = 100; Format = RGBA8; };``  
+   ReShade will attempt to re-use the same memory for textures with the same dimensions and format across effect files if the pooled annotation is set.
+
+#### ReShade FX allows semantics to be used on texture declarations. This is used to request special textures:
+
+ * ``texture2D texColor : COLOR;``  
+   Receives the backbuffer contents (read-only).
+ * ``texture2D texDepth : DEPTH;``  
+   Receives the game's depth information (read-only).
+
+```hlsl
+texture2D texColorBuffer : COLOR;
+texture2D texDepthBuffer : DEPTH;
+
+texture2D texTarget
 {
-    return true;
+	// The texture dimensions (default: 1x1).
+	Width = BUFFER_WIDTH / 2; // Used with texture1D, texture2D and texture3D
+	Height = BUFFER_HEIGHT / 2; // Used with texture2D and texture3D
+	Depth = 1; // Used with texture3D
+	
+	// The number of mipmaps including the base level (default: 1).
+	MipLevels = 1;
+	
+	// The internal texture format (default: RGBA8).
+	// Available formats:
+	//   R8, R16, R16F, R32F, R32I, R32U
+	//   RG8, RG16, RG16F, RG32F
+	//   RGBA8, RGBA16, RGBA16F, RGBA32F
+	//   RGB10A2
+	Format = RGBA8;
+
+	// Unspecified properties are set to the defaults shown here.
+};
+
+texture3D texIntegerVolume
+{
+	Width = 10;
+	Height = 10;
+	Depth = 10;
+	Format = R32I; // Single-component integer format, which means sampler and storage have to be of that integer type (sampler3D<int> or storage3D<int>)
+};
+```
+
+## Sampler Object
+
+Samplers are the bridge between textures and shaders. They define how a texture is read from and how data outside texel coordinates is sampled. Multiple samplers can refer to the same texture using different options.
+
+```hlsl
+sampler2D samplerColor
+{
+	// The texture to be used for sampling.
+	Texture = texColorBuffer;
+
+	// The method used for resolving texture coordinates which are out of bounds.
+	// Available values: CLAMP, MIRROR, WRAP or REPEAT, BORDER
+	AddressU = CLAMP;
+	AddressV = CLAMP;
+	AddressW = CLAMP;
+
+	// The magnification, minification and mipmap filtering types.
+	// Available values: POINT, LINEAR, ANISOTROPIC
+	MagFilter = LINEAR;
+	MinFilter = LINEAR;
+	MipFilter = LINEAR;
+
+	// The maximum mipmap levels accessible.
+	MinLOD = 0.0f;
+	MaxLOD = 1000.0f;
+
+	// An offset applied to the calculated mipmap level (default: 0).
+	MipLODBias = 0.0f;
+
+	// Enable or disable converting  to linear colors when sampling from the
+	// texture.
+	SRGBTexture = false;
+
+	// Unspecified properties are set to the defaults shown here.
+};
+
+sampler2D samplerDepth
+{
+	Texture = texDepthBuffer;
+};
+sampler2D samplerTarget
+{
+	Texture = texTarget;
+};
+```
+
+## Storage Object
+
+Storage objects define how a texture should be written to from compute shaders.
+
+```hlsl
+storage2D storageTarget
+{
+	// The texture to be used as storage.
+	Texture = texTarget;
+
+	// The mipmap level of the texture to fetch/store.
+	MipLevel = 0;
+};
+
+storage3D<int> storageIntegerVolume
+{
+	Texture = texIntegerVolume;
+};
+```
+
+## Uniform Variables
+
+Global variables with the `uniform` qualifier are constant across each iteration of a shader per pass and may be controlled via the UI.
+
+#### Annotations to customize UI appearance:
+
+ * ui_type: Can be `input`, `drag`, `slider`, `combo`, `radio` or `color`
+ * ui_min: The smallest value allowed in this variable (required when `ui_type = "drag"` or `ui_type = "slider"`)
+ * ui_max: The largest value allowed in this variable (required when `ui_type = "drag"` or `ui_type = "slider"`)
+ * ui_step: The value added/subtracted when clicking the button next to the slider
+ * ui_items: A list of items for the combo box or radio buttons, each item is terminated with a `\0` character (required when `ui_type = "combo"` or `ui_type = "radio"`)
+ * ui_label: Display name of the variable in the UI. If this is missing, the variable name is used instead.
+ * ui_tooltip: Text that is displayed when the user hovers over the variable in the UI. Use this for a description.
+ * ui_category: Groups values together under a common headline. Note that all variables in the same category also have to be declared next to each other for this to be displayed correctly.
+ * ui_category_closed: Set to true to show a category closed by default.
+ * ui_category_toggle: Set to true to make the boolean value of this variable toggle visibility of the whole category.
+ * ui_spacing: Adds space before the UI widget (multiplied by the value of the annotation).
+ * ui_units: Adds units description on the slider/drag bar (only used when `ui_type = "drag"` or `ui_type = "slider"`)
+ * hidden: Set to true to hide this variable in the UI.
+ * noedit: Set to true to show this variable in the UI, but prevent modification.
+ * nosave: Set to true to prevent the value of this variable from being saved to presets.
+ * noreset: Set to true to prevent resetting this variable to its default in the UI.
+
+#### Annotations are also used to request special runtime values (via the `source` annotation):
+
+ * ``uniform float frametime < source = "frametime"; >;``  
+   Time in milliseconds it took for the last frame to complete.
+ * ``uniform int framecount < source = "framecount"; >;``  
+   Total amount of frames since the game started.
+ * ``uniform float4 date < source = "date"; >;``  
+   float4(year, month (1 - 12), day of month (1 - 31), time in seconds)
+ * ``uniform float timer < source = "timer"; >;``  
+   Timer counting time in milliseconds since game start.
+ * ``uniform float2 pingpong < source = "pingpong"; min = 0; max = 10; step = 2; smoothing = 0.0; >;``  
+   Value that smoothly interpolates between `min` and `max` using `step` as the increase/decrease value every second (so a step value of 1 means the value is increased/decreased by 1 per second).\
+   In this case it would go from 0 to 10 in 5 seconds and then back to 0 in another 5 seconds (interpolated every frame).
+   The `smoothing` value affects the interpolation curve (0 is linear interpolation and anything else changes the speed depending on how close the current value is to `min` or `max`).
+   The second component is either +1 or -1 depending on the direction it currently goes.
+ * ``uniform int random_value < source = "random"; min = 0; max = 10; >;``  
+   Gets a new random value between min and max every pass.
+ * ``uniform bool space_bar_down < source = "key"; keycode = 0x20; mode = ""; >;``  
+   True if specified keycode (in this case the spacebar) is pressed and false otherwise.
+   If mode is set to "press" the value is true only in the frame the key was initially held down.
+   If mode is set to "toggle" the value stays true until the key is pressed a second time.
+ * ``uniform bool left_mouse_button_down < source = "mousebutton"; keycode = 0; mode = ""; >;``  
+   True if specified mouse button (0 - 4) is pressed and false otherwise.
+   If mode is set to "press" the value is true only in the frame the key was initially held down.
+   If mode is set to "toggle" the value stays true until the key is pressed a second time.
+ * ``uniform float2 mouse_point < source = "mousepoint"; >;``  
+   Gets the position of the mouse cursor in screen coordinates.
+ * ``uniform float2 mouse_delta < source = "mousedelta"; >;``  
+   Gets the movement of the mouse cursor in screen coordinates.
+ * ``uniform float2 mouse_value < source = "mousewheel"; min = 0.0; max = 10.0; > = 1.0;``  
+   The first component value is modified via the mouse wheel. Starts at 1.0, goes up (but not past 10.0) when mouse wheel is moved forward and down (but not past 0.0) when it is moved backward.
+   The second component holds the current wheel state (how much the mouse wheel was moved this frame). It's positive for forward movement, negative for backward movement or zero for no movement.
+ * ``uniform bool has_depth < source = "bufready_depth"; >;``  
+   True if the application's depth buffer is available in textures declared with `DEPTH`, false if not.
+ * ``uniform bool overlay_open < source = "overlay_open"; >;``  
+   True if the ReShade in-game overlay is currently open, false if not.
+ * ``uniform int active_variable < source = "overlay_active"; >;``  
+   Contains the one-based index of the uniform variable currently being modified in the overlay, zero if none.
+ * ``uniform int hovered_variable < source = "overlay_hovered"; >;``  
+   Contains the one-based index of the uniform variable currently hovered with the cursor in the overlay, zero if none.
+ * ``uniform bool screenshot < source = "screenshot"; >;``  
+   True if a screenshot is being taken, false if not.
+
+```hlsl
+// Initializers are used to specify the default value (zero is used if not specified).
+uniform float4 UniformSingleValue = float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+// It is recommended to use constants instead of uniforms if the value is not changing or user-configurable.
+static const float4 ConstantSingleValue = float4(0.0f, 0.0f, 0.0f, 0.0f);
+```
+
+## Structs
+
+Structs are user defined data types that can be used as types for variables. These behave the same as in HLSL.
+
+```hlsl
+struct MyStruct
+{
+	int MyField1, MyField2;
+	float MyField3;
+};
+```
+
+## Namespaces
+
+Namespaces are used to group functions and variables together, which is especially useful to prevent name clashing.\
+The "::" operator is used to resolve variables or functions inside other namespaces.
+
+```hlsl
+namespace MyNamespace
+{
+	namespace MyNestedNamespace
+	{
+		void DoNothing()
+		{
+		}
+	}
+
+	void DoNothing()
+	{
+		MyNestedNamespace::DoNothing();
+	}
 }
 ```
-Similarily it may also export an `AddonUninit` function, which will be called right before unloading (but only if initialization was successfull).
-```cpp
-extern "C" __declspec(dllexport) void AddonUninit(HMODULE addon_module, HMODULE reshade_module)
+
+## User functions
+
+#### Attributes:
+
+ * ``[numthreads(X, Y, Z)]``  
+   Specifies the local thread group size, with X, Y and Z being the size in the corresponding dimension.
+ * ``[shader("vertex")]``/``[shader("pixel")]``/``[shader("compute")]``  
+   Optionally specifies the shader type this function implements.
+
+#### Parameter qualifiers:
+
+ * ``in`` Declares an input parameter. Default and implicit if none is used. Functions expect these to be filled with a value.
+ * ``out`` Declares an output parameter. The value is filled in the function and can be used in the caller again.
+ * ``inout`` Declares a parameter that provides input and also expects output.
+
+#### Supported flow-control statements:
+
+ * ``if ([condition]) { [statement...] } [else { [statement...] }]``  
+   Statements after if are only executed  if condition is true, otherwise the ones after else are executed (if it exists).
+ * ``switch ([expression]) { [case [constant]/default]: [statement...] }``  
+   Selects the case matching the switch expression or default if non does and it exists.
+ * ``for ([declaration]; [condition]; [iteration]) { [statement...] }``  
+   Runs the statements in the body as long as the condition is true. The iteration expression is executed after each run.
+ * ``while ([condition]) { [statement...] }``  
+   Runs the statements in the body as long as the condition is true.
+ * ``do { [statement...] } while ([condition]);``  
+   Similar to a normal while loop with the difference that the statements are executed at least once.
+ * ``break;``  
+   Breaks out  of the current loop or switch statement and jumps to the statement after.
+ * ``continue;``  
+   Jumps directly to the next loop iteration ignoring any left code in the current one.
+ * ``return [expression];``  
+   Jumps out of the current function, optionally providing a value to the caller.
+ * ``discard;``  
+   Abort rendering of the current pixel and step out of the shader. Can be used in pixel shaders only.
+
+```hlsl
+// Semantics are used to tell the runtime which arguments to connect between shader stages.
+// They are ignored on non-entry-point functions (those not used in any pass below).
+// Semantics starting with "SV_" are system value semantics and serve a special meaning.
+// The following vertex shader demonstrates how to generate a simple fullscreen triangle with the three vertices provided by ReShade (http://redd.it/2j17wk):
+[shader("vertex")]
+void ExampleVS(uint id : SV_VertexID, out float4 position : SV_Position, out float2 texcoord : TEXCOORD0)
 {
+	texcoord.x = (id == 2) ? 2.0 : 0.0;
+	texcoord.y = (id == 1) ? 2.0 : 0.0;
+	position = float4(texcoord * float2(2, -2) + float2(-1, 1), 0, 1);
+}
+
+// The following pixel shader simply returns the color of the games output again without modifying it (via the "color" output parameter):
+[shader("pixel")]
+void ExamplePS0(float4 pos : SV_Position, float2 texcoord : TEXCOORD0, out float4 color : SV_Target)
+{
+	color = tex2D(samplerColor, texcoord);
+}
+
+// The following pixel shader takes the output of the previous pass and adds the depth buffer content to the right screen side.
+[shader("pixel")]
+float4 ExamplePS1(float4 pos : SV_Position, float2 texcoord : TEXCOORD0) : SV_Target
+{
+	// Here color information is sampled with "samplerTarget" and thus from "texTarget" (see sampler declaration above),
+	// which was set as render target in the previous pass (see the technique definition below) and now contains its output.
+	// In this case it is the game output, but downsampled to half because the texture is only half of the screen size.
+	float4 color = tex2D(samplerTarget, texcoord);
+	
+	// Only execute the following code block when on the right half of the screen.
+	if (texcoord.x > 0.5f)
+	{
+		// Sample from the game depth buffer using the "samplerDepth" sampler declared above.
+		float depth = tex2D(samplerDepth, texcoord).r;
+		
+		// Linearize the depth values to better visualize them.
+		depth = 2.0 / (-99.0 * depth + 101.0);
+		
+		color.rgb = depth.rrr;
+	}
+
+	return color;
+}
+
+// The following compute shader uses shared memory within a thread group:
+groupshared int sharedMem[64];
+[shader("compute")]
+void ExampleCS0(uint3 tid : SV_GroupThreadID)
+{
+	if (tid.y == 0)
+		sharedMem[tid.x] = tid.x;
+	barrier();
+	if (tid.y == 0 && (tid.x % 2) != 0)
+		sharedMem[tid.x] += sharedMem[tid.x + 1];
+}
+
+// The following compute shader writes a color gradient to the "texTarget" texture:
+[shader("compute")]
+void ExampleCS1(uint3 id : SV_DispatchThreadID, uint3 tid : SV_GroupThreadID)
+{
+	tex2Dstore(storageTarget, id.xy, float4(tid.xy / float2(20 * 64, 2 * 8), 0, 1));
 }
 ```
 
-Here is a very basic code example of an add-on that registers a callback that gets executed every time a new frame is presented to the screen:
+## Intrinsic functions
 
-```cpp
-#include <reshade.hpp>
+ReShade FX supports most of the standard HLSL intrinsics.\
+Check out https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-intrinsic-functions for reference on them:
 
-static void on_present(reshade::api::command_queue *queue, reshade::api::swapchain *swapchain, const reshade::api::rect *source_rect, const reshade::api::rect *dest_rect, uint32_t dirty_rect_count, const reshade::api::rect *dirty_rects)
+ * abs
+ * acos
+ * all
+ * any
+ * asfloat
+ * asin
+ * asint
+ * asuint
+ * atan
+ * atan2
+ * ceil
+ * clamp
+ * countbits
+ * cos
+ * cosh
+ * cross
+ * ddx
+ * ddy
+ * degrees
+ * determinant
+ * distance
+ * dot
+ * exp
+ * exp2
+ * f16tof32
+ * f32tof16
+ * faceforward
+ * firstbitlow
+ * firstbithigh
+ * floor
+ * frac
+ * frexp
+ * fwidth
+ * isinf
+ * isnan
+ * ldexp
+ * length
+ * lerp
+ * log
+ * log10
+ * log2
+ * mad
+ * max
+ * min
+ * modf
+ * mul
+ * normalize
+ * pow
+ * radians
+ * rcp
+ * reflect
+ * refract
+ * reversebits
+ * round
+ * rsqrt
+ * saturate
+ * sign
+ * sin
+ * sincos
+ * sinh
+ * smoothstep
+ * sqrt
+ * step
+ * tan
+ * tanh
+ * transpose
+ * trunc
+
+In addition to these, ReShade FX provides a few additional ones:
+
+ * ``T tex1D(sampler1D<T> s, float coords)``  
+   ``T tex1D(sampler1D<T> s, float coords, int offset)``  
+   ``T tex2D(sampler2D<T> s, float2 coords)``  
+   ``T tex2D(sampler2D<T> s, float2 coords, int2 offset)``  
+   ``T tex3D(sampler3D<T> s, float3 coords)``  
+   ``T tex3D(sampler3D<T> s, float3 coords, int3 offset)``  
+   Samples a texture.\
+   See also https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-sample.
+ * ``T tex1Dlod(sampler1D<T> s, float4 coords)``  
+   ``T tex1Dlod(sampler1D<T> s, float4 coords, int offset)``  
+   ``T tex2Dlod(sampler2D<T> s, float4 coords)``  
+   ``T tex2Dlod(sampler2D<T> s, float4 coords, int2 offset)``  
+   ``T tex3Dlod(sampler3D<T> s, float4 coords)``  
+   ``T tex3Dlod(sampler3D<T> s, float4 coords, int3 offset)``  
+   Samples a texture on a specific mipmap level.\
+   The accepted coordinates are in the form `float4(x, y, 0, lod)`.\
+   See also https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplelevel.
+ * ``T tex1Dgrad(sampler1D<T> s, float coords, float ddx, float ddy)``  
+   ``T tex1Dgrad(sampler1D<T> s, float coords, float ddx, float ddy, int offset)``  
+   ``T tex2Dgrad(sampler2D<T> s, float2 coords, float2 ddx, float2 ddy)``  
+   ``T tex2Dgrad(sampler2D<T> s, float2 coords, float2 ddx, float2 ddy, int2 offset)``  
+   ``T tex3Dgrad(sampler3D<T> s, float3 coords, float3 ddx, float3 ddy)``  
+   ``T tex3Dgrad(sampler3D<T> s, float3 coords, float3 ddx, float3 ddy, int3 offset)``  
+   Samples a texture using a gradient to influence the way the sample location is calculated.\
+   See also https://learn.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplegrad.
+ * ``T tex1Dfetch(sampler1D<T> s, int coords)``  
+   ``T tex1Dfetch(sampler1D<T> s, int coords, int lod)``  
+   ``T tex1Dfetch(storage1D<T> s, int coords)``  
+   ``T tex2Dfetch(sampler2D<T> s, int2 coords)``  
+   ``T tex2Dfetch(sampler2D<T> s, int2 coords, int lod)``  
+   ``T tex2Dfetch(storage2D<T> s, int2 coords)``  
+   ``T tex3Dfetch(sampler3D<T> s, int3 coords)``  
+   ``T tex3Dfetch(sampler3D<T> s, int3 coords, int lod)``  
+   ``T tex3Dfetch(storage3D<T> s, int3 coords)``  
+   Fetches a value from the texture directly without any sampling.\
+   See also https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-load.
+ * ``float4 tex2DgatherR(sampler2D s, float2 coords)``  
+   ``float4 tex2DgatherR(sampler2D s, float2 coords, int2 offset)``  
+   ``float4 tex2DgatherG(sampler2D s, float2 coords)``  
+   ``float4 tex2DgatherG(sampler2D s, float2 coords, int2 offset)``  
+   ``float4 tex2DgatherB(sampler2D s, float2 coords)``  
+   ``float4 tex2DgatherB(sampler2D s, float2 coords, int2 offset)``  
+   ``float4 tex2DgatherA(sampler2D s, float2 coords)``  
+   ``float4 tex2DgatherA(sampler2D s, float2 coords, int2 offset)``  
+   Gathers the specified component of the four neighboring pixels and returns the result.\
+   `tex2DgatherR` for example is equivalent to https://docs.microsoft.com/windows/win32/direct3dhlsl/texture2d-gatherred.  
+   The return value is effectively:
+   ```
+   float4(tex2Dfetch(s, coords * tex2Dsize(s) + int2(0, 1)).comp,
+          tex2Dfetch(s, coords * tex2Dsize(s) + int2(1, 1)).comp,
+          tex2Dfetch(s, coords * tex2Dsize(s) + int2(1, 0)).comp,
+          tex2Dfetch(s, coords * tex2Dsize(s) + int2(0, 0)).comp)
+   ```
+ * ``int tex1Dsize(sampler1D<T> s)``  
+   ``int tex1Dsize(sampler1D<T> s, int lod)``  
+   ``int tex1Dsize(storage1D<T> s)``  
+   ``int2 tex2Dsize(sampler2D<T> s)``  
+   ``int2 tex2Dsize(sampler2D<T> s, int lod)``  
+   ``int2 tex2Dsize(storage2D<T> s)``  
+   ``int3 tex3Dsize(sampler3D<T> s)``  
+   ``int3 tex3Dsize(sampler3D<T> s, int lod)``  
+   ``int3 tex3Dsize(storage3D<T> s)``  
+   Gets the texture dimensions of the specified mipmap level.\
+   See also https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-getdimensions
+ * ``void tex1Dstore(storage1D<T> s, int coords, T value)``  
+   ``void tex2Dstore(storage2D<T> s, int2 coords, T value)``  
+   ``void tex3Dstore(storage2D<T> s, int3 coords, T value)``  
+   Writes the specified value to the texture referenced by the storage. Only valid from within compute shaders.\
+   See also https://docs.microsoft.com/windows/win32/direct3dhlsl/sm5-object-rwtexture2d-operatorindex
+ * ``void barrier()``  
+   Synchronizes threads in a thread group.\
+   Is equivalent to https://docs.microsoft.com/windows/win32/direct3dhlsl/groupmemorybarrierwithgroupsync
+ * ``void memoryBarrier()``  
+   Waits on the completion of all memory accesses resulting from the use of texture or storage operations.\
+   Is equivalent to https://docs.microsoft.com/windows/win32/direct3dhlsl/allmemorybarrier
+ * ``void groupMemoryBarrier()``  
+   Waits on the completion of all memory accesses within the thread group resulting from the use of texture or storage operations.\
+   Is equivalent to https://docs.microsoft.com/windows/win32/direct3dhlsl/groupmemorybarrier
+ * ``int atomicAdd(inout int dest, int value)``  
+   ``int atomicAdd(storage1D<int> s, int coords, int value)``  
+   ``int atomicAdd(storage2D<int> s, int2 coords, int value)``  
+   ``int atomicAdd(storage3D<int> s, int3 coords, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedadd
+ * ``int atomicAnd(inout int dest, int value)``  
+   ``int atomicAnd(storage1D<int> s, int coords, int value)``  
+   ``int atomicAnd(storage2D<int> s, int2 coords, int value)``  
+   ``int atomicAnd(storage3D<int> s, int3 coords, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedand
+ * ``int atomicOr(inout int dest, int value)``  
+   ``int atomicOr(storage1D<int> s, int coords, int value)``  
+   ``int atomicOr(storage2D<int> s, int2 coords, int value)``  
+   ``int atomicOr(storage3D<int> s, int3 coords, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedor
+ * ``int atomicXor(inout int dest, int value)``  
+   ``int atomicXor(storage1D<int> s, int coords, int value)``  
+   ``int atomicXor(storage2D<int> s, int2 coords, int value)``  
+   ``int atomicXor(storage3D<int> s, int3 coords, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedxor
+ * ``int atomicMin(inout int dest, int value)``  
+   ``int atomicMin(storage1D<int> s, int coords, int value)``  
+   ``int atomicMin(storage2D<int> s, int2 coords, int value)``  
+   ``int atomicMin(storage3D<int> s, int3 coords, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedmin
+ * ``int atomicMax(inout int dest, int value)``  
+   ``int atomicMax(storage<int> s, int coords, int value)``  
+   ``int atomicMax(storage<int> s, int2 coords, int value)``  
+   ``int atomicMax(storage<int> s, int3 coords, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedmax
+ * ``int atomicExchange(inout int dest, int value)``  
+   ``int atomicExchange(storage1D<int> s, int coords, int value)``  
+   ``int atomicExchange(storage2D<int> s, int2 coords, int value)``  
+   ``int atomicExchange(storage3D<int> s, int3 coords, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedexchange
+ * ``int atomicCompareExchange(inout int dest, int compare, int value)``  
+   ``int atomicCompareExchange(storage1D<int> s, int coords, int compare, int value)``  
+   ``int atomicCompareExchange(storage2D<int> s, int2 coords, int compare, int value)``  
+   ``int atomicCompareExchange(storage3D<int> s, int3 coords, int compare, int value)``  
+   https://docs.microsoft.com/windows/win32/direct3dhlsl/interlockedcompareexchange
+
+## Techniques
+
+An effect file can have multiple techniques, each representing a full render pipeline, which is executed to apply post-processing effects. ReShade executes all enabled techniques in the order they were defined in the effect file.\
+A technique is made up of one or more passes which contain info about which render states to set and what shaders to execute. They are run sequentially starting with the top most declared. A name is optional.\
+Each pass can set render states. The default value is used if one is not specified in the pass body.
+
+#### Annotations:
+
+ * ``technique Name < enabled = true; >``  
+ Enable (or disable if false) this technique by default.
+ * ``technique Name < enabled_in_screenshot = true; >``  
+ Set this to false to disabled this technique while a screenshot is taken.
+ * ``technique Name < timeout = 1000; >``  
+ Auto-toggle this technique off 1000 milliseconds after it was enabled.\
+ This can for example be used to have a technique run a single time only to do some initialization work, via ``technique Name < enabled = true; timeout = 1; >``
+ * ``technique Name < hidden = true; >``  
+ Hide this technique in the UI.
+ * ``technique Name < ui_label = "My Effect Name"; >``  
+ Uses a custom name for the technique in the UI.
+ * ``technique Name < ui_tooltip = "My Effect description"; >``  
+ Shows the specified text when the user hovers the technique in the UI.
+
+```hlsl
+technique Example < ui_tooltip = "This is an example!"; >
 {
-    // ...
-}
+	pass p0
+	{
+		// The primitive topology rendered in the draw call.
+		// Available values:
+		//   POINTLIST, LINELIST, LINESTRIP, TRIANGLELIST, TRIANGLESTRIP
+		PrimitiveTopology = TRIANGLELIST; // or PrimitiveType
 
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID)
-{
-    switch (fdwReason)
-    {
-    case DLL_PROCESS_ATTACH:
-        // Call 'reshade::register_addon()' before you call any other function of the ReShade API.
-        // This will look for the ReShade instance in the current process and initialize the API when found.
-        if (!reshade::register_addon(hinstDLL))
-            return FALSE;
-        // This registers a callback for the 'present' event, which occurs every time a new frame is presented to the screen.
-        // The function signature has to match the type defined by 'reshade::addon_event_traits<reshade::addon_event::present>::decl'.
-        // For more details check the inline documentation for each event in 'reshade_events.hpp'.
-        reshade::register_event<reshade::addon_event::present>(&on_present);
-        break;
-    case DLL_PROCESS_DETACH:
-        // Optionally unregister the event callback that was previously registered during process attachment again.
-        reshade::unregister_event<reshade::addon_event::present>(&on_present);
-        // And finally unregister the add-on from ReShade (this will automatically unregister any events and overlays registered by this add-on too).
-        reshade::unregister_addon(hinstDLL);
-        break;
-    }
-    return TRUE;
-}
-```
+		// The number of vertices ReShade generates for the draw call.
+		// This has different effects on the rendered primitives based on the primitive topology.
+		// A triangle list needs 3 separate vertices for every triangle for example, a strip on the other hand reuses the last 2, so only 1 is needed for every additional triangle.
+		VertexCount = 3;
 
-After building an add-on DLL, change its file extension from `.dll` to `.addon` and put it into the add-on search directory configured in ReShade (which defaults to the same directory as ReShade). It will be picked up and loaded automatically on the next launch of the application.
+		// The following two accept function names declared above which are used as entry points for the shader.
+		// Please note that all parameters must have an associated semantic so the runtime can match them between shader stages.
+		VertexShader = ExampleVS;
+		PixelShader = ExamplePS0;
 
-For more complex examples, see the [examples directory in the repository](https://github.com/crosire/reshade/tree/main/examples). Contents of this document:
+		// The number of thread groups to dispatch when a compute shader is used.
+		DispatchSizeX = 1;
+		DispatchSizeY = 1;
+		DispatchSizeZ = 1;
 
-* [Events](#events)
-* [Overlays](#overlays)
-* [Abstraction](#abstraction)
-  * [Device & Commands](#device--commands-reshade_api_devicehpp)
-  * [Resources & Resource Views](#resources--resource-views-reshade_api_resourcehpp)
-  * [Pipelines, Layouts & Descriptor Tables](#pipelines-layouts--descriptor-tables-reshade_api_pipelinehpp)
+		// Compute shaders are specified with the number of threads per thread group in brackets.
+		// The following for example will create groups of 64x1x1 threads:
+		ComputeShader = ExampleCS0<64,1,1>;
+	
+		// RenderTarget0 to RenderTarget7 allow to set one or more render targets for rendering to textures.
+		// Set them to a texture name declared above in order to write the color output (SV_Target0 to RenderTarget0, SV_Target1 to RenderTarget1, ...) to this texture in this pass.
+		// If multiple render targets are used, the dimensions of them has to match each other.
+		// If no render targets are set here, RenderTarget0 points to the backbuffer.
+		// Be aware that you can only read **OR** write a texture at the same time, so do not sample from it while it is still bound as render target here.
+		// RenderTarget and RenderTarget0 are aliases.
+		RenderTarget = texTarget;
 
-## Events
+		// Set to true to clear all bound render targets to zero before rendering.
+		ClearRenderTargets = false;
 
-The [graphics API abstraction](#abstraction) is modeled after the Direct3D 12 and Vulkan APIs, so much of the terminology used should be familiar to developers that have used those before.
+		// Set to false to disable automatic rebuilding of the mipmap chain of all render targets and/or storage objects.
+		// This is useful when using a compute shader that writes to specific mipmap levels, rather than relying on the automatic generation.
+		// Note that the texture must have MipLevels set to a number higher than 1 for this to work.
+		GenerateMipMaps = true;
+		
+		// A mask applied to the color output before it is written to the render target.
+		RenderTargetWriteMask = 0xF; // or ColorWriteEnable
+		
+		// Enable or disable gamma correction applied to the output.
+		SRGBWriteEnable = false;
 
-Detailed inline documentation for all classes and methods can be found inside the headers (see `reshade_api_device.hpp` for the abstraction object classes and `reshade_events.hpp` for a list of available events).
+		// BlendEnable0 to BlendEnable7 allow to enable or disable color and alpha blending for the respective render target.
+		// Don't forget to also set "ClearRenderTargets" to "false" if you want to blend with existing data in a render target.
+		// BlendEnable and BlendEnable0 are aliases,
+		BlendEnable = false;
 
-The base object everything else is created from is a `reshade::api::device`. This represents a logical rendering device that is typically mapped to a physical GPU (but may also be mapped to multiple GPUs). ReShade will call the `reshade::addon_event::init_device` event after the application created a device, which can e.g. be used to do some initialization work that only has to happen once. The `reshade::addon_event::destroy_device` event is called before this device is destroyed again, which can be used to perform clean up work.
-```cpp
-// Example callback function that can be registered via 'reshade::register_event<reshade::addon_event::init_device>(&on_init_device)'.
-static void on_init_device(reshade::api::device *device)
-{
-    // In case one wants to do something with the native graphics API object, rather than doing all work
-    // through the ReShade API, can retrieve it as follows:
-    if (device->get_api() == reshade::api::device_api::d3d11)
-    {
-        ID3D11Device *const d3d11_device = (ID3D11Device *)device->get_native();
-        // ...
-    }
+		// The operator used for color and alpha blending.
+		// To set these individually for each render target, append the render target index to the pass state name, e.g. BlendOp3 for the fourth render target (zero-based index 3).
+		// Available values:
+		//   ADD, SUBTRACT, REVSUBTRACT, MIN, MAX
+		BlendOp = ADD;
+		BlendOpAlpha = ADD;
 
-    // But preferably things should be done through the graphics API abstraction.
-    // E.g. to create a new 800x600 texture in GPU memory, call 'reshade::api::device::create_resource()' like this:
-    reshade::api::resource texture = {};
-    const reshade::api::resource_desc desc(
-        800, 600, 1, 1,
-        reshade::api::format::r8g8b8a8_unorm,
-        1,
-        reshade::api::memory_heap::gpu_only,
-        reshade::api::resource_usage::shader_resource | reshade::api::resource_usage::render_target);
-    if (!device->create_resource(desc, nullptr, reshade::api::resource_usage::undefined, &texture))
-    {
-        // Error handling ...
-    }
+		// The data source and optional pre-blend operation used for blending.
+		// To set these individually for each render target, append the render target index to the pass state name, e.g. SrcBlend3 for the fourth render target (zero-based index 3).
+		// Available values:
+		//   ZERO, ONE,
+		//   SRCCOLOR, SRCALPHA, INVSRCCOLOR, INVSRCALPHA
+		//   DESTCOLOR, DESTALPHA, INVDESTCOLOR, INVDESTALPHA
+		SrcBlend = ONE;
+		SrcBlendAlpha = ONE;
+		DestBlend = ZERO;
+		DestBlendAlpha = ZERO;
+		
+		// Enable or disable the stencil test.
+		// The depth and stencil buffers are cleared before rendering each pass in a technique.
+		StencilEnable = false;
 
-    // ...
-}
-```
+		// The masks applied before reading from/writing to the stencil.
+		// Available values:
+		//   0-255
+		StencilReadMask = 0xFF; // or StencilMask
+		StencilWriteMask = 0xFF;
+		
+		// The function used for stencil testing.
+		// Available values:
+		//   NEVER, ALWAYS
+		//   EQUAL, NEQUAL or NOTEQUAL
+		//   LESS, GREATER, LEQUAL or LESSEQUAL, GEQUAL or GREATEREQUAL
+		StencilFunc = ALWAYS;
 
-To execute [rendering commands](#device--commands-reshade_api_devicehpp) (like draw/dispatch commands), an application has to record them into a `reshade::api::command_list` and then submit to a `reshade::api::command_queue`. In some graphics APIs there is only a single implicit command list and queue, but modern ones like Direct3D 12 and Vulkan allow the creation of multiple for more efficient multi-threaded rendering. ReShade will call the `reshade::addon_event::init_command_list` and `reshade::addon_event::init_command_queue` events after any such object was created by the application (including the implicit ones for older graphics APIs). Similarily, `reshade::addon_event::destroy_command_list` and `reshade::addon_event::destroy_command_queue` are called upon their destruction.
+		// The reference value used with the stencil function.
+		StencilRef = 0;
+		
+		// The operation  to  perform  on  the stencil  buffer when  the
+		// stencil  test passed/failed or stencil passed  but depth test
+		// failed.
+		// Available values:
+		//   KEEP, ZERO, REPLACE, INCR, INCRSAT, DECR, DECRSAT, INVERT
+		StencilPassOp = KEEP; // or StencilPass
+		StencilFailOp = KEEP; // or StencilFail
+		StencilDepthFailOp = KEEP; // or StencilZFail
+	}
+	pass p1
+	{
+		// Alternatively just "ComputeShader = ExampleCS1" if the thread group size was specified via the "numthreads" function attribute
+		ComputeShader = ExampleCS1<64,8>;
 
-ReShade will also pass the current command list object to every command event, like `reshade::addon_event::draw`, `reshade::addon_event::dispatch` and so on, which can be used to add additional commands to that command list or replace those of the application.
-```cpp
-// Example callback function that can be registered via 'reshade::register_event<reshade::addon_event::draw>(&on_draw)'.
-static bool on_draw(reshade::api::command_list *cmd_list, uint32_t vertices, uint32_t instances, uint32_t first_vertex, uint32_t first_instance)
-{
-    // Clear a render target to red before every time a single triangle is drawn
-    if (vertices == 3 && instances == 1)
-    {
-        reshade::api::resource_view rtv = ...;
-
-        const float clear_color[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
-        cmd_list->clear_render_target_view(rtv, clear_color);
-    }
-
-    // Return 'true' to prevent this application command from actually being executed (e.g. because already having added a new command via 'cmd_list->draw(...)' or similar that should replace it).
-    // Return 'false' to leave it unaffected.
-    return false;
-}
-```
-
-Showing results on the screen is done through a `reshade::api::swapchain` object. This is a collection of back buffers that the application can render into, which will eventually be presented to the screen. There may be multiple swap chains, if for example the application is rendering to multiple windows, or to a screen and a VR headset. ReShade again will call the `reshade::addon_event::init_swapchain` event after such an object was created by the application (and `reshade::addon_event::destroy_swapchain` on destruction). In addition ReShade will call the `reshade::addon_event::create_swapchain` event before a swap chain is created, so an add-on may modify its description before that happens. For example, to force the resolution to a specific value, one can do the following:
-```cpp
-// Example callback function that can be registered via 'reshade::register_event<reshade::addon_event::create_swapchain>(&on_create_swapchain)'.
-static bool on_create_swapchain(reshade::api::swapchain_desc &desc, void *hwnd)
-{
-    // Change resolution to 1920x1080 if the application is trying to create a swap chain at 800x600.
-    if (desc.back_buffer.texture.width == 800 &&
-        desc.back_buffer.texture.height == 600)
-    {
-        desc.back_buffer.texture.width = 1920;
-        desc.back_buffer.texture.height = 1080;
-    }
-
-    // Return 'true' for ReShade to overwrite the swap chain description of the application with the values set in this callback.
-    // Return 'false' to leave it unaffected.
-    return true;
-}
-```
-
-ReShade associates an independent post-processing effect runtime with most swap chains. This is the runtime one usually controls via the ReShade overlay, but it can also be controlled programatically via the ReShade API using methods of the `reshade::api::effect_runtime` object.
-
-In contrast to the described basic API abstraction objects, any [buffers](#resources--resource-views-reshade_api_resourcehpp), [textures](#resources--resource-views-reshade_api_resourcehpp), [pipelines](#pipelines-layouts--descriptor-tables-reshade_api_pipelinehpp), etc. are referenced via handles. These are either created by the application and passed to events (like `reshade::addon_event::init_resource`, `reshade::addon_event::init_pipeline`, ...) or can be created through the `reshade::api::device` object of the ReShade API (via `reshade::api::device::create_resource()`, `reshade::api::device::create_pipeline()`, ...).
-
-Buffers and textures are referenced via `reshade::api::resource` handles. Depth-stencil, render target, shader resource or unordered access views to such resources are referenced via `reshade::api::resource_view` handles. Sampler state objects are referenced via `reshade::api::sampler` handles, (partial) pipeline state objects via `reshade::api::pipeline` handles and so on.
-
-## Overlays
-
-It is also supported to add an overlay, which can e.g. be used to display debug information or interact with the user in-application.
-Overlays are created with the use of the docking branch of [Dear ImGui](https://github.com/ocornut/imgui/tree/v1.90-docking). Including `reshade.hpp` after [`imgui.h`](https://github.com/ocornut/imgui/blob/v1.90-docking/imgui.h) will automatically overwrite all Dear ImGui functions to use the instance created and managed by ReShade. This means all you have to do is include these two headers and use Dear ImGui as usual (without having to build its source code files):
-
-```cpp
-#define IMGUI_DISABLE_INCLUDE_IMCONFIG_H
-#define ImTextureID ImU64 // Change ImGui texture ID type to that of a 'reshade::api::resource_view' handle
-
-#include <imgui.h>
-#include <reshade.hpp>
-
-bool g_popup_window_visible = false;
-
-static void draw_debug_overlay(reshade::api::effect_runtime *runtime)
-{
-    ImGui::TextUnformatted("Some text");
-
-    if (ImGui::Button("Press me to open an additional popup window"))
-        g_popup_window_visible = true;
-
-    if (g_popup_window_visible)
-    {
-        ImGui::Begin("Popup", &g_popup_window_visible);
-        ImGui::TextUnformatted("Some other text");
-        ImGui::End();
-    }
-}
-
-static void draw_settings_overlay(reshade::api::effect_runtime *runtime)
-{
-    ImGui::Checkbox("Popup window is visible", &g_popup_window_visible);
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID)
-{
-    switch (fdwReason)
-    {
-    case DLL_PROCESS_ATTACH:
-        // This will also populate the Dear ImGui function table.
-        if (!reshade::register_addon(hinstDLL))
-            return FALSE;
-        // This registers a new overlay with the specified name with ReShade.
-        // It will be displayed as an additional window when the ReShade overlay is opened.
-        // Its contents are defined by Dear ImGui commands issued in the specified callback function.
-        reshade::register_overlay("Test", &draw_debug_overlay);
-        // It is also possible to register a special settings overlay by passing 'nullptr' instead of a title.
-        // This is shown beneath the add-on information in the add-on list of the ReShade overlay and can be used to present settings to users.
-        reshade::register_overlay(nullptr, &draw_settings_overlay);
-        break;
-    case DLL_PROCESS_DETACH:
-        reshade::unregister_addon(hinstDLL);
-        break;
-    }
-    return TRUE;
+		DispatchSizeX = 20; // 20 * 64 threads total in X dimension
+		DispatchSizeY = 2;  //  2 *  8 threads total in Y dimension
+	}
+	pass p2
+	{
+		VertexShader = ExampleVS;
+		PixelShader = ExamplePS1;
+	}
 }
 ```
-
-Do not call `ImGui::Begin` and `ImGui::End` in the callback to create the overlay window itself, ReShade already does this for you before and after calling the callback function.
-You can however call `ImGui::Begin` and `ImGui::End` with a different title to open additional popup windows (this is not recommended though, since those are difficult to navigate in VR).
-
-Overlay names are shared across ReShade and all add-ons, which means you can register with a name already used by ReShade or another add-on to append widgets to their overlay.
-For example, `reshade::register_overlay("###settings", ...)` allows you to add widgets to the settings page in ReShade and `reshade::register_overlay("OSD", ...)` allows you to add additional information to the always visible on-screen display (clock, FPS, frametime) ReShade provides.
-
-## Abstraction
-
-### Device & Commands ([reshade_api_device.hpp](https://github.com/crosire/reshade/blob/main/include/reshade_api_device.hpp))
-
-The concept of `reshade::api::device` is functionally equivalent to `ID3D12Device` in D3D12 or `VkDevice` in Vulkan. The concept of `reshade::api::command_list` is functionally equivalent to `ID3D12CommandList` in D3D12 or `VkCommandBuffer` in Vulkan. The concept of `reshade::api::command_queue` is functionally equivalent to `ID3D12CommandQueue` in D3D12 or `VkQueue` in Vulkan.
-
-### Resources & Resource Views ([reshade_api_resource.hpp](https://github.com/crosire/reshade/blob/main/include/reshade_api_resource.hpp))
-
-To allocate memory and create buffers or textures, call `reshade::api::device::create_resource()`. Care has to be taken to specify all the possible ways the resource is going to be used via `reshade::api::resource_desc::usage`.
-
-Resources allocated in GPU memory (`reshade::api::resource_desc::heap` set to `reshade::api::memory_heap::gpu_only`) cannot be mapped and accessed on the CPU, so to fill them with contents either have to specify it during resource creation via the initial data parameter or upload it via `reshade::api::device::update_buffer_region()` or `reshade::api::device::update_texture_region()`.\
-Resources allocated in CPU-visible memory (`reshade::api::resource_desc::heap` set to `reshade::api::memory_heap::cpu_to_gpu` or `reshade::api::memory_heap::gpu_to_cpu`) on the other hand can be mapped and directly accessed on the CPU, via `reshade::api::device::map_buffer_region()` or `reshade::api::device::map_texture_region()`.
-
-The concept of `reshade::api::resource` is functionally equivalent to `ID3D12Resource` in D3D12 or `VkBuffer`/`VkImage` in Vulkan. The concept of `reshade::api::resource_view` is functionally equivalent to SRV/UAV/... in D3D12 or `VkBufferView`/`VkImageView` in Vulkan.
-
-### Pipelines, Layouts & Descriptor Tables ([reshade_api_pipeline.hpp](https://github.com/crosire/reshade/blob/main/include/reshade_api_pipeline.hpp))
-
-Shaders and other render state is combined into monolithic pipeline state objects (`reshade::api::pipeline`), which can then be bound at draw time (using `reshade::api::command_list::bind_pipeline()`) to make any following draw calls make use of those shaders and render state.
-
-```cpp
-reshade::api::pipeline_subobject subobjects[];
-
-...
-
-reshade::api::shader_desc vertex_shader;
-vertex_shader.code = ...;
-vertex_shader.code_size = ...;
-subobjects[0].type = reshade::api::pipeline_subobject_type::vertex_shader;
-subobjects[0].count = 1;
-subobjects[0].data = &vertex_shader;
-
-reshade::api::shader_desc pixel_shader;
-pixel_shader.code = ...;
-pixel_shader.code_size = ...;
-subobjects[1].type = reshade::api::pipeline_subobject_type::pixel_shader;
-subobjects[1].count = 1;
-subobjects[1].data = &pixel_shader;
-
-reshade::api::rasterizer_desc rasterizer_state;
-rasterizer_state.cull_mode = reshade::api::cull_mode::none;
-subobjects[2].type = reshade::api::pipeline_subobject_type::rasterizer_state;
-subobjects[2].count = 1;
-subobjects[2].data = &rasterizer_state;
-```
-
-To create a pipeline, call `reshade::api::device::create_pipeline()` with a list of sub-objects that should be combined. This can contain graphics shaders and render state to create a graphics pipeline, or just a compute shader sub-object to create a compute pipeline, or ray tracing shaders to create a ray tracing pipeline.
-
-In D3D9, D3D10, D3D11 and OpenGL, pipeline state objects can be partially bound, meaning `reshade::api::command_list::bind_pipeline()` can be called with a subset of `reshade::api::pipeline_stage` flags and only the sub-objects in the pipeline state object corresponding to those flags will be bound. In D3D12 and Vulkan pipeline state objects have to be monolithic and can only be bound as a whole, meaning the pipeline stage flags have to be `reshade::api::pipeline_stage::all_graphics` (for a graphics pipeline), `reshade::api::pipeline_stage::all_compute` (for a compute pipeline) or `reshade::api::pipeline_stage::all_raytracing` (for a ray tracing pipeline) and only a single pipeline per these stage flags can be bound on a command list at a time.
-
-The concept of `reshade::api::pipeline` is functionally equivalent to `ID3D12PipelineState` in D3D12 or `VkPipeline` in Vulkan.
-
-Binding resources and other objects to the shaders in a pipeline is done via descriptors. A descriptor is just a small handle that points to a shader resource view (`reshade::api::resource_view`), a sampler object (`reshade::api::sampler`) or a constant buffer resource (`reshade::api::buffer_range`). These are written into fixed-size linear tables (`reshade::api::descriptor_table`) in memory (`reshade::api::descriptor_heap`), which can be quickly swapped at draw time (using `reshade::api::command_list::bind_descriptor_tables()`). An additional layout object (`reshade::api::pipeline_layout`) is needed to map the entries from these linear tables to shader registers in shaders.
-
-Since this mapping can get pretty complex, below is an example pipeline layout description which describes just a single descriptor table and how the corresponding table would be layed out in memory:
-```cpp
-reshade::api::pipeline_layout_param params[];
-
-...
-
-params[0].type = reshade::api::pipeline_layout_param_type::descriptor_table;
-params[0].descriptor_table.count = 4;
-
-params[0].descriptor_table.ranges[0].binding = 0;
-params[0].descriptor_table.ranges[0].dx_register_index = 0; // Base shader register => t0 - t2
-params[0].descriptor_table.ranges[0].count = 2;
-params[0].descriptor_table.ranges[0].type = reshade::api::descriptor_type::texture_shader_resource_view; // => tX shader register
-
-params[0].descriptor_table.ranges[1].binding = 2;
-params[0].descriptor_table.ranges[1].dx_register_index = 6; // Base shader register => s6 - s10
-params[0].descriptor_table.ranges[1].count = 5;
-params[0].descriptor_table.ranges[1].array_size = 3; // First binding is an array descriptor of size 3, and the remaining 2 descriptors (due to total descriptor count of 5) are put into subsequent bindings (see also documentation on 'reshade::api::descriptor_range::array_size')
-params[0].descriptor_table.ranges[1].type = reshade::api::descriptor_type::sampler; // => sX shader register
-
-params[0].descriptor_table.ranges[2].binding = 5;
-params[0].descriptor_table.ranges[2].dx_register_index = 1; // Base shader register => b1 - b2
-params[0].descriptor_table.ranges[2].count = 2;
-params[0].descriptor_table.ranges[2].type = reshade::api::descriptor_type::constant_buffer; // => bX shader register
-
-params[0].descriptor_table.ranges[3].binding = 7;
-params[0].descriptor_table.ranges[3].dx_register_index = 3;
-params[0].descriptor_table.ranges[3].count = 2;
-params[0].descriptor_table.ranges[3].array_size = 2;
-params[0].descriptor_table.ranges[3].type = reshade::api::descriptor_type::texture_shader_resource_view;
-```
-```
-               Descriptor Table
-              ++-----------++-----------++-----------++-----------++-----------++-----------++-----------++-----------++
-              || X         || X         || X | X | X || X         || X         || X         || X         || X   | X   ||
-              ++-----------++-----------++-----------++-----------++-----------++-----------++-----------++-----------++
-
-Binding        | 0          | 1          | 2          | 3          | 4          | 5          | 6          | 7          |
-Array Offset   | 0          | 0          | 0 | 1 | 2  | 0          | 0          | 0          |            | 0   | 1    |
-
-Offset         | 0          | 1          | 2 | 3 | 4  | 5          | 6          | 7          | 8          | 9   | 10   |
-
-               ^------------------------^^-------------------------------------^^------------------------^^------------^
-                Shader Resource Views     Samplers                               Constant Buffers          Shader Resource Views
-                register(t0 - t2)         register(s6 - s10)                     register(b1 - b2)         register(t3 - t4)
-
-```
-
-To create a pipeline layout like the above, call `reshade::api::device::create_pipeline_layout()` with a list of pipeline layout parameter descriptions. Each parameter can refer to:
-- push constants (when type is `reshade::api::pipeline_layout_param_type::push_constants`, which can then be referenced in `reshade::api::command_list::push_constants()` via its parameter index in the pipeline layout), more on those next
-- push descriptors (when type is `reshade::api::pipeline_layout_param_type::push_descriptors`, which can then be referenced in `reshade::api::command_list::push_descriptors()` via its parameter index in the pipeline layout), more on those next
-- a single descriptor table (when type is `reshade::api::pipeline_layout_param_type::descriptor_table`, which can then be referenced in `reshade::api::command_list::bind_descriptor_table()` via its parameter index in the pipeline layout)
-
-Only a single pipeline layout per stage can be bound on a command list at a time. It is updated as part of `reshade::api::command_list::bind_descriptor_tables()`, `reshade::api::command_list::push_descriptors()` or `reshade::api::command_list::push_constants()`.
-
-Managing constant buffers can be cumbersome, so for use cases with just a few constants, command lists have a small memory pool built-in, which can be filled with constant data in-place at draw time and bound to a constant buffer register in shaders. These constants, written using `reshade::api::command_list::push_constants()`, are called push constants (equivalent concept in D3D12 is called root constants).
-
-Similarily, managing descriptor tables and the memory they are allocated from manually can be cumbersome, so for simple use cases, command lists also have a small descriptor heap built-in, which can be filled with descriptors in-place at draw time. The descriptors written this way, using `reshade::api::command_list::push_descriptors()` without allocating a descriptor table first, are called push descriptors (since they are pushed into the command list). They are limited to a single linear list of descriptors of the same type per pipeline layout parameter however.
-
-Since descriptor tables are effectively just sections in descriptor heap memory, `reshade::api::descriptor_table` can be thought of a view into a `reshade::api::descriptor_heap`, similar to how `reshade::api::resource_view` are views into a `reshade::api::resource`. Different views can refer to the same underlying memory, so there can be multiple `reshade::api::descriptor_table` pointing to the same descriptors. To uniquely identify a descriptor, `reshade::api::device::get_descriptor_heap_offset()` can be used to query its offset in the descriptor heap memory.
-
-To allocate a new descriptor table, call `reshade::api::device::allocate_descriptor_tables()`, which will do as the name implies from a descriptor heap that ReShade manages internally. The size and layout of that descriptor table is described by the passed in pipeline layout parameter. `reshade::api::device::update_descriptors()` or `reshade::api::device::update_descriptor_tables()` (for multiple updates at once) can then be used to fill the table with descriptors before using it.
-
-The concept of `reshade::api::pipeline_layout` is functionally equivalent to `ID3D12RootSignature` in D3D12 or `VkPipelineLayout` in Vulkan. The concept of `reshade::api::descriptor_table` is functionally equivalent to descriptor tables in D3D12 or `VkDescriptorSet` in Vulkan.
-

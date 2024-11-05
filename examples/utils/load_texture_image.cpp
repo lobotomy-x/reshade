@@ -14,7 +14,7 @@
 
 using namespace reshade::api;
 
-bool load_texture_image(const resource_desc &desc, subresource_data &data, std::vector<std::vector<uint8_t>> &data_to_delete)
+bool load_texture_image(const resource_desc &desc, subresource_data &data, std::vector<std::vector<uint8_t>> &data_to_delete, HMODULE mod)
 {
 #if RESHADE_ADDON_TEXTURE_LOAD_HASH_TEXMOD
 	// Behavior of the original TexMod (see https://github.com/codemasher/texmod/blob/master/uMod_DX9/uMod_TextureFunction.cpp#L41)
@@ -31,10 +31,9 @@ bool load_texture_image(const resource_desc &desc, subresource_data &data, std::
 		format_slice_pitch(desc.texture.format, data.row_pitch, desc.texture.height));
 #endif
 
-	// Prepend executable directory to image files
-	wchar_t file_prefix[MAX_PATH] = L"";
-	GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
-
+        wchar_t file_prefix[MAX_PATH] = L"";
+        // use module handle instead of nullptr to get actual reshade.dll path
+        GetModuleFileNameW(mod, file_prefix, ARRAYSIZE(file_prefix));
 	std::filesystem::path replace_path = file_prefix;
 	replace_path  = replace_path.parent_path();
 	replace_path /= RESHADE_ADDON_TEXTURE_LOAD_DIR;

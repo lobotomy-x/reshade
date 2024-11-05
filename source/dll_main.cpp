@@ -52,6 +52,17 @@ bool is_windows7()
 	return VerifyVersionInfo(&verinfo_windows7, VER_MAJORVERSION | VER_MINORVERSION, condition) != FALSE;
 }
 
+
+/// <summary>
+/// If the reshade dll has not been named to wrap a system dll and its not being loaded from the default global path for Vulkan and VR support we should assume its being injected
+/// </summary>
+bool is_external_install()
+{
+  return (g_reshade_dll_path.filename() == L"ReShade64.dll" ||
+              g_reshade_dll_path.filename() == L"ReShade32.dll") &&
+             g_reshade_dll_path.parent_path() != "C:/ProgramData/ReShade";
+}
+
 /// <summary>
 /// Expands any environment variables in the path (like "%USERPROFILE%") and checks whether it points towards an existing directory.
 /// </summary>
@@ -78,6 +89,20 @@ std::filesystem::path get_base_path(bool default_to_target_executable_path = fal
 {
 	std::filesystem::path result;
 
+	//Very simply if we are named ReShadeXX.dll and we're not in the ProgramData folder reserved for VR and Vulkan injection, nor in the game folder
+	//then we are certainly being injected into the game folder from an external path so we should make that our base path
+	//This makes things easier with the standard injection tool and even moreso when used with a third party loader
+	// This is also crucial for some games to work without crashing due to anti-tamper systems and generally just saves some headaches
+	// Included logic from older commit to allow a config in the game folder to take priority if you actually want that behavior although I suggest
+	// holding off on that option until I have also pushed proposed changes to setup tool/compatibility.ini as well as changes to the default addons to prefer
+	// base directory over game directory
+	// Realistically it probably doesn't matter for functionality whether it checked here or in its own function. Probably that one is better so it gets the annotation and is easier to notice
+ /*       if ((g_reshade_dll_path.filename() == L"ReShade64.dll" ||
+             g_reshade_dll_path.filename() == L"ReShade32.dll") &&
+            g_reshade_dll_path.parent_path() != "C:/ProgramData/ReShade" )
+          return g_reshade_dll_path.parent_path();*/
+
+
 	if (reshade::global_config().get("INSTALL", "BasePath", result) && resolve_env_path(result))
 		return result;
 
@@ -87,6 +112,9 @@ std::filesystem::path get_base_path(bool default_to_target_executable_path = fal
 
 	return default_to_target_executable_path ? g_target_executable_path.parent_path() : g_reshade_dll_path.parent_path();
 }
+
+
+
 
 /// <summary>
 /// Returns the path to the "System32" directory or the module path from global configuration if it exists.
@@ -140,7 +168,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			const bool is_dinput = _wcsnicmp(module_name.c_str(), L"dinput", 6) == 0;
 
 			// UWP apps do not have write access to the application directory, so never default the base path to it for them
-			const bool default_base_to_target_executable_path = !is_d3d && !is_dxgi && !is_opengl && !is_dinput && !is_uwp_app();
+			// Similarly do not default to the game's path when loaded from a separate directory (although technically you could inject from the game path and it would resolve the same as before)
+			const bool default_base_to_target_executable_path = !is_d3d && !is_dxgi && !is_opengl && !is_dinput && !is_uwp_app() && !is_external_install();
+			//const bool default_base_to_target_executable_path = !is_d3d && !is_dxgi && !is_opengl && !is_dinput && !is_uwp_app();
 
 			g_reshade_base_path = get_base_path(default_base_to_target_executable_path);
 

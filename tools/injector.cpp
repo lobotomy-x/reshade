@@ -125,7 +125,7 @@ int wmain(int argc, wchar_t *argv[])
 	wprintf(L"Found a matching process with PID %lu! Injecting ReShade ... ", pid);
 
 	// Wait just a little bit for the application to initialize
-	Sleep(50);
+	Sleep(10);
 
 	// Open target application process
 	const scoped_handle remote_process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, FALSE, pid);

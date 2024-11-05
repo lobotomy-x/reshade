@@ -7,9 +7,9 @@
 #include "config.hpp"
 
 using namespace reshade::api;
-
+HMODULE mod;
 // See implementation in 'utils\save_texture_image.cpp'
-extern bool save_texture_image(const resource_desc &desc, const subresource_data &data);
+extern bool save_texture_image(const resource_desc &desc, const subresource_data &data, HMODULE mod);
 
 // There are multiple different ways textures can be initialized, so try and intercept them all
 // - Via initial data provided during texture creation (e.g. for immutable textures, common in D3D11 and OpenGL): See 'on_init_texture' implementation below
@@ -48,7 +48,7 @@ static void on_init_texture(device *device, const resource_desc &desc, const sub
 	if (initial_data == nullptr || !filter_texture(device, desc, nullptr))
 		return;
 
-	save_texture_image(desc, *initial_data);
+	save_texture_image(desc, *initial_data, mod);
 }
 static bool on_update_texture(device *device, const subresource_data &data, resource dst, uint32_t dst_subresource, const subresource_box *dst_box)
 {
@@ -59,7 +59,7 @@ static bool on_update_texture(device *device, const subresource_data &data, reso
 	if (!filter_texture(device, dst_desc, dst_box))
 		return false;
 
-	save_texture_image(dst_desc, data);
+	save_texture_image(dst_desc, data, mod);
 
 	return false;
 }
@@ -90,7 +90,7 @@ static bool on_copy_buffer_to_texture(command_list *cmd_list, resource src, uint
 			mapped_data.row_pitch = (mapped_data.row_pitch + 255) & ~255;
 		mapped_data.slice_pitch = format_slice_pitch(dst_desc.texture.format, mapped_data.row_pitch, slice_height != 0 ? slice_height : dst_desc.texture.height);
 
-		save_texture_image(dst_desc, mapped_data);
+		save_texture_image(dst_desc, mapped_data, mod);
 
 		device->unmap_buffer_region(src);
 	}
@@ -125,7 +125,7 @@ static void on_unmap_texture(device *, resource resource, uint32_t subresource)
 
 	s_current_mapping.res = { 0 };
 
-	save_texture_image(s_current_mapping.desc, s_current_mapping.data);
+	save_texture_image(s_current_mapping.desc, s_current_mapping.data, mod);
 }
 
 extern "C" __declspec(dllexport) const char *NAME = "Texture Dump";
@@ -143,6 +143,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		reshade::register_event<reshade::addon_event::copy_buffer_to_texture>(on_copy_buffer_to_texture);
 		reshade::register_event<reshade::addon_event::map_texture_region>(on_map_texture);
 		reshade::register_event<reshade::addon_event::unmap_texture_region>(on_unmap_texture);
+                mod = hModule;
 		break;
 	case DLL_PROCESS_DETACH:
 		reshade::unregister_addon(hModule);

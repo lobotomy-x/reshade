@@ -181,7 +181,11 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 		std::transform(file_path_ext.begin(), file_path_ext.end(), file_path_ext.begin(), std::towlower);
 
 		std::string label = ICON_FK_FILE " ";
+
 		if (file_path_ext == L".fx" || file_path_ext == L".fxh")
+
+                if (file_path_ext == L".fx" || file_path_ext == L".fxh" )
+
 			label = ICON_FK_FILE_CODE " " + label;
 		else if (file_path_ext == L".bmp" || file_path_ext == L".png" || file_path_ext == L".jpg" || file_path_ext == L".jpeg" || file_path_ext == L".dds")
 			label = ICON_FK_FILE_IMAGE " " + label;
@@ -368,7 +372,8 @@ bool reshade::imgui::file_input_box(const char *name, const char *hint, std::fil
 	}
 
 	ImGui::SameLine(0, button_spacing);
-	if (ImGui::Button(ICON_FK_FOLDER_OPEN, ImVec2(button_size, 0)))
+        if (ImGui::Button(ICON_FK_FOLDER_OPEN, ImVec2(button_size, 0)) &&
+            dialog_path != dialog_path.root_name())
 	{
 		dialog_path = path;
 		ImGui::OpenPopup("##select");
@@ -413,7 +418,7 @@ bool reshade::imgui::directory_input_box(const char *name, std::filesystem::path
 	{
 		dialog_path = path;
 		// Add separator at end so that file dialog navigates into this directory
-		if (dialog_path.has_stem())
+		if (dialog_path.has_stem() && dialog_path!=dialog_path.root_name())
 			dialog_path += std::filesystem::path::preferred_separator;
 		ImGui::OpenPopup("##select");
 	}

@@ -362,6 +362,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config_get("INPUT", "KeyFPS", _fps_key_data);
 	config_get("INPUT", "KeyFrameTime", _frametime_key_data);
 	config_get("INPUT", "InputProcessing", _input_processing_mode);
+        config_get("INPUT", "EscClosesOverlay", _esc_closes_overlay);
 
 #if RESHADE_LOCALIZATION
 	config_get("OVERLAY", "Language", _selected_language);
@@ -467,6 +468,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("INPUT", "KeyFPS", _fps_key_data);
 	config.set("INPUT", "KeyFrametime", _frametime_key_data);
 	config.set("INPUT", "InputProcessing", _input_processing_mode);
+    config.set("INPUT", "EscClosesOverlay", _esc_closes_overlay);
 
 #if RESHADE_LOCALIZATION
 	config.set("OVERLAY", "Language", _selected_language);
@@ -836,7 +838,7 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		if (_show_overlay && !_ignore_shortcuts && !_imgui_context->IO.NavVisible && _input->is_key_pressed(0x1B /* VK_ESCAPE */))
+		if (_show_overlay && !_ignore_shortcuts && !_imgui_context->IO.NavVisible &&( _esc_closes_overlay && _input->is_key_pressed(0x1B /* VK_ESCAPE */)))
 			show_overlay = false; // Close when pressing the escape button and not currently navigating with the keyboard
 		else if (!_ignore_shortcuts && _input->is_key_pressed(_overlay_key_data, _force_shortcut_modifiers) && _imgui_context->ActiveId == 0)
 			show_overlay = !_show_overlay;
@@ -905,14 +907,17 @@ void reshade::runtime::draw_gui()
 	_effects_expanded_state &= 2;
 #endif
 
-	if (!show_splash_window && !show_message_window && !show_statistics_window && !_show_overlay
+	if (!show_splash_window && !show_message_window &&
+            !show_statistics_window && !_show_overlay
 #if RESHADE_FX
-		&& _preview_texture == 0
+            && _preview_texture == 0
 #endif
 #if RESHADE_ADDON
-		&& !has_addon_event<addon_event::reshade_overlay>()
+            && !has_addon_event<addon_event::reshade_overlay>()
 #endif
-		)
+        )
+
+
 	{
 		if (_input != nullptr)
 		{
@@ -2166,8 +2171,8 @@ void reshade::runtime::draw_gui_settings()
 				"Block all input when overlay is visible\n");
 			std::replace(input_processing_mode_items.begin(), input_processing_mode_items.end(), '\n', '\0');
 			modified |= ImGui::Combo(_("Input processing"), reinterpret_cast<int *>(&_input_processing_mode), input_processing_mode_items.c_str());
-
-			modified |= imgui::key_input_box(_("Overlay key"), _overlay_key_data, *_input);
+            modified |= ImGui::Checkbox(_("Escape Closes Overlay"),&_esc_closes_overlay);
+		    modified |= imgui::key_input_box(_("Overlay key"), _overlay_key_data, *_input);
 
 #if RESHADE_FX
 			modified |= imgui::key_input_box(_("Effect toggle key"), _effects_key_data, *_input);
@@ -2268,14 +2273,13 @@ void reshade::runtime::draw_gui_settings()
 		modified |= ImGui::Checkbox(_("Save before and after images"), &_screenshot_save_before);
 #endif
 		modified |= ImGui::Checkbox(_("Save separate image with the overlay visible"), &_screenshot_save_gui);
-
+		modified |= ImGui::Checkbox(_("Split into folders by app name"),&_screenshot_path_split_appname);
+        ImGui::SetItemTooltip(_("Split save paths into folders by App Name\nUseful if you have multiple games sharing the same screenshot directory"));
 		modified |= imgui::file_input_box(_("Screenshot sound"), "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
 		ImGui::SetItemTooltip(_("Audio file that is played when taking a screenshot."));
 
-		modified |= imgui::file_input_box(_("Post-save command"), "command.exe", _screenshot_post_save_command, _file_selection_path, { L".exe" });
-		ImGui::SetItemTooltip(_(
-			"Executable that is called after saving a screenshot.\n"
-			"This can be used to perform additional processing on the image (e.g. compressing it with an image optimizer)."));
+		modified |= imgui::file_input_box(_("Post-save command"), "command.exe", _screenshot_post_save_command, _file_selection_path, {L".exe", L".py", L".cmd", L".bat", L".sh"});
+		ImGui::SetItemTooltip(_("Executable that is called after saving a screenshot.\nThis can be used to perform additional processing on the image (e.g. compressing it with an image optimizer)."));
 
 		char arguments[260];
 		arguments[_screenshot_post_save_command_arguments.copy(arguments, sizeof(arguments) - 1)] = '\0';
@@ -2322,6 +2326,7 @@ void reshade::runtime::draw_gui_settings()
 				extension.c_str(),
 				_screenshot_name.c_str());
 		}
+
 
 		modified |= imgui::directory_input_box(_("Post-save command working directory"), _screenshot_post_save_command_working_directory, _file_selection_path);
 		modified |= ImGui::Checkbox(_("Hide post-save command window"), &_screenshot_post_save_command_hide_window);

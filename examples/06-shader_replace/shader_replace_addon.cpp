@@ -11,7 +11,7 @@
 #include <filesystem>
 
 using namespace reshade::api;
-
+HMODULE mod;
 constexpr uint32_t SPIRV_MAGIC = 0x07230203;
 
 static thread_local std::vector<std::vector<uint8_t>> s_data_to_delete;
@@ -31,11 +31,13 @@ static bool load_shader_code(device_api device_type, shader_desc &desc, std::vec
 
 	// Prepend executable file name to image files
 	wchar_t file_prefix[MAX_PATH] = L"";
-	GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
+	//use module handle instead of nullptr to get actual reshade.dll path
+	GetModuleFileNameW(mod, file_prefix, ARRAYSIZE(file_prefix));
+
 
 	std::filesystem::path replace_path = file_prefix;
-	replace_path  = replace_path.parent_path();
-	replace_path /= RESHADE_ADDON_SHADER_LOAD_DIR;
+        replace_path = replace_path.parent_path();
+        replace_path /= RESHADE_ADDON_SHADER_LOAD_DIR;
 
 	wchar_t hash_string[11];
 	swprintf_s(hash_string, L"0x%08X", shader_hash);
@@ -111,6 +113,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			return FALSE;
 		reshade::register_event<reshade::addon_event::create_pipeline>(on_create_pipeline);
 		reshade::register_event<reshade::addon_event::init_pipeline>(on_after_create_pipeline);
+                mod = hModule;
 		break;
 	case DLL_PROCESS_DETACH:
 		reshade::unregister_addon(hModule);

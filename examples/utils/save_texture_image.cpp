@@ -87,8 +87,9 @@ static void unpack_bc4_value(uint8_t alpha_0, uint8_t alpha_1, uint32_t alpha_in
 	}
 }
 
-bool save_texture_image(const resource_desc &desc, const subresource_data &data)
+bool save_texture_image(const resource_desc &desc, const subresource_data &data, HMODULE mod)
 {
+
 #if RESHADE_ADDON_TEXTURE_SAVE_HASH_TEXMOD
 	// Behavior of the original TexMod (see https://github.com/codemasher/texmod/blob/master/uMod_DX9/uMod_TextureFunction.cpp#L41)
 	const uint32_t hash = ~compute_crc32(
@@ -403,11 +404,9 @@ bool save_texture_image(const resource_desc &desc, const subresource_data &data)
 		// Unsupported format
 		return false;
 	}
-
-	// Prepend executable directory to image files
-	wchar_t file_prefix[MAX_PATH] = L"";
-	GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
-
+        wchar_t file_prefix[MAX_PATH] = L"";
+        // use module handle instead of nullptr to get actual reshade.dll path
+        GetModuleFileNameW(mod, file_prefix, ARRAYSIZE(file_prefix));
 	std::filesystem::path dump_path = file_prefix;
 	dump_path  = dump_path.parent_path();
 	dump_path /= RESHADE_ADDON_TEXTURE_SAVE_DIR;

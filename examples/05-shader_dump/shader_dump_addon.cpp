@@ -11,7 +11,7 @@
 #include <filesystem>
 
 using namespace reshade::api;
-
+HMODULE mod;
 constexpr uint32_t SPIRV_MAGIC = 0x07230203;
 
 static void save_shader_code(device_api device_type, const shader_desc &desc)
@@ -27,13 +27,14 @@ static void save_shader_code(device_api device_type, const shader_desc &desc)
 	else if (device_type == device_api::opengl)
 		extension = desc.code_size > 5 && std::strncmp(static_cast<const char *>(desc.code), "!!ARB", 5) == 0 ? L".txt" : L".glsl"; // OpenGL otherwise uses plain text ARB assembly language or GLSL
 
-	// Prepend executable directory to image files
-	wchar_t file_prefix[MAX_PATH] = L"";
-	GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
+	// Prepend executable file name to image files
+        wchar_t file_prefix[MAX_PATH] = L"";
+        // use module handle instead of nullptr to get actual reshade.dll path
+        GetModuleFileNameW(mod, file_prefix, ARRAYSIZE(file_prefix));
 
-	std::filesystem::path dump_path = file_prefix;
-	dump_path  = dump_path.parent_path();
-	dump_path /= RESHADE_ADDON_SHADER_SAVE_DIR;
+        std::filesystem::path dump_path = file_prefix;
+        dump_path = dump_path.parent_path();
+        dump_path /= RESHADE_ADDON_SHADER_SAVE_DIR;
 
 	if (std::filesystem::exists(dump_path) == false)
 		std::filesystem::create_directory(dump_path);
@@ -63,6 +64,7 @@ static bool on_create_pipeline(device *device, pipeline_layout, uint32_t subobje
 		case pipeline_subobject_type::geometry_shader:
 		case pipeline_subobject_type::pixel_shader:
 		case pipeline_subobject_type::compute_shader:
+
 		case pipeline_subobject_type::amplification_shader:
 		case pipeline_subobject_type::mesh_shader:
 		case pipeline_subobject_type::raygen_shader:
@@ -90,6 +92,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		if (!reshade::register_addon(hModule))
 			return FALSE;
 		reshade::register_event<reshade::addon_event::create_pipeline>(on_create_pipeline);
+                mod = hModule;
 		break;
 	case DLL_PROCESS_DETACH:
 		reshade::unregister_addon(hModule);

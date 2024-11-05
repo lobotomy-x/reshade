@@ -457,8 +457,10 @@ bool reshade::runtime::on_init()
 		_input.reset();
 
 	// GTK 3 enables transparency for windows, which messes with effects that do not return an alpha value, so disable that again
-	if (window != nullptr)
-		utils::set_window_transparency(window, false);
+        if (window != nullptr)
+          utils::set_window_transparency(window, false);
+          
+
 
 	// Reset frame count to zero so effects are loaded in 'update_effects'
 	_frame_count = 0;
@@ -1017,6 +1019,7 @@ void reshade::runtime::load_config()
 #endif
 
 	config_get("SCREENSHOT", "SavePath", _screenshot_path);
+    config_get("SCREENSHOT", "ScreenShotPathSplitAppName", _screenshot_path_split_appname);
 	config_get("SCREENSHOT", "SoundPath", _screenshot_sound_path);
 	config_get("SCREENSHOT", "ClearAlpha", _screenshot_clear_alpha);
 	config_get("SCREENSHOT", "FileFormat", _screenshot_format);
@@ -1042,6 +1045,7 @@ void reshade::runtime::save_config() const
 {
 	ini_file &config = ini_file::load_cache(_config_path);
 
+  config.set("SCREENSHOT", "ScreenShotPathSplitAppName", _screenshot_path_split_appname);
 	config.set("INPUT", "ForceShortcutModifiers", _force_shortcut_modifiers);
 	config.set("INPUT", "KeyScreenshot", _screenshot_key_data);
 #if RESHADE_FX
@@ -1090,6 +1094,7 @@ void reshade::runtime::save_config() const
 	config.set("SCREENSHOT", "FileFormat", _screenshot_format);
 	config.set("SCREENSHOT", "FileNaming", _screenshot_name);
 	config.set("SCREENSHOT", "JPEGQuality", _screenshot_jpeg_quality);
+   config.set("SCREENSHOT", "ScreenShotPathSplitAppName", _screenshot_path_split_appname);
 #if RESHADE_FX
 	config.set("SCREENSHOT", "SaveBeforeShot", _screenshot_save_before);
 	config.set("SCREENSHOT", "SavePresetFile", _screenshot_include_preset);
@@ -3367,8 +3372,9 @@ void reshade::runtime::reorder_techniques(std::vector<size_t> &&technique_indice
 void reshade::runtime::load_effects(bool force_load_all)
 {
 	// Build a list of effect files by walking through the effect search paths
-	const std::vector<std::filesystem::path> effect_files =
-		find_files(_effect_search_paths, { L".fx", L".addonfx" });
+  const std::vector<std::filesystem::path> effect_files = find_files(
+      _effect_search_paths, {L".fx", L".addonfx"});
+                //  just a silly little test. worked suprisingly well but I should make an actual addon     {L".fx", L".addonfx", L".hlsl", L".ini", L".txt"});
 
 	if (effect_files.empty())
 		return; // No effect files found, so nothing more to do
@@ -3378,10 +3384,15 @@ void reshade::runtime::load_effects(bool force_load_all)
 	// Have to be initialized at this point or else the threads spawned below will immediately exit without reducing the remaining effects count
 	assert(_is_initialized);
 
+	// Add 46 support for rare cases that might want it. I'm also very curious to see what if anything happens when using reshade alongside 3dmigoto
+	// which includes (optionally) a modified d3dcompiler_46.dll wrapper that allows for exporting hlsl. Probably it will just work as normal but I'll see
 	// Ensure HLSL compiler is loaded before trying to compile effects in Direct3D
 	if (_d3d_compiler_module == nullptr && (_renderer_id & 0xF0000) == 0)
 	{
-		if ((_d3d_compiler_module = LoadLibraryW(L"d3dcompiler_47.dll")) == nullptr &&
+          if ((_d3d_compiler_module = LoadLibraryW(L"d3dcompiler_47.dll")) ==
+                  nullptr &&
+              (_d3d_compiler_module = LoadLibraryW(L"d3dcompiler_46.dll")) ==
+                  nullptr &&
 			(_d3d_compiler_module = LoadLibraryW(L"d3dcompiler_43.dll")) == nullptr)
 		{
 			log::message(log::level::error, "Unable to load HLSL compiler (\"d3dcompiler_47.dll\")!");
@@ -4779,26 +4790,58 @@ static std::string expand_macro_string(const std::string &input, std::vector<std
 	return result;
 }
 
-void reshade::runtime::save_screenshot(const std::string_view postfix)
-{
-	const unsigned int screenshot_count = _screenshot_count;
-
-	std::string screenshot_name = expand_macro_string(_screenshot_name, {
-		{ "AppName", g_target_executable_path.stem().u8string() },
+void reshade::runtime::save_screenshot(const std::string_view postfix) {
+  const unsigned int screenshot_count = _screenshot_count;
+  std::filesystem::path _current_screenshot_path;
+  if (_screenshot_path_split_appname) {
+	 // I initially removed the appname from the macro to prevent having screenshots named AppName\AppName
+	 // but removing entirely might be too heavy handed?
+    // Maybe this is okay? it would remove the appname and leading whitespace if people have not changed their target path but select this option
+    if (_screenshot_name == "%AppName% %Date% %Time%") _screenshot_name = "%Date% %Time%";
+    std::string screenshot_name = expand_macro_string(_screenshot_name,		
+         {{"AppName", g_target_executable_path.stem().u8string()},
 #if RESHADE_FX
-		{ "PresetName",  _current_preset_path.stem().u8string() },
-		{ "Count", std::to_string(screenshot_count) }
+        {"PresetName", _current_preset_path.stem().u8string()},
+         {"Count", std::to_string(screenshot_count)}
 #endif
-	});
+        });
 
-	screenshot_name += postfix;
-	screenshot_name += (_screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg");
+    screenshot_name += postfix;
+    screenshot_name += (_screenshot_format == 0   ? ".bmp"
+                        : _screenshot_format == 1 ? ".png"
+                                                  : ".jpg");
 
-	const std::filesystem::path screenshot_path = g_reshade_base_path / _screenshot_path / std::filesystem::u8path(screenshot_name);
+    if (!std::filesystem::exists(g_reshade_base_path / _screenshot_path /
+                                 g_target_executable_path.stem()))
+      std::filesystem::create_directories(g_reshade_base_path /
+                                          _screenshot_path /
+                                          g_target_executable_path.stem());
+    _current_screenshot_path = g_reshade_base_path / _screenshot_path /
+                               g_target_executable_path.stem() /
+                               std::filesystem::u8path(screenshot_name);
+  } else {
+    std::string screenshot_name = expand_macro_string(
+        _screenshot_name,
+        {{"AppName", g_target_executable_path.stem().u8string()},
+#if RESHADE_FX
+         {"PresetName", _current_preset_path.stem().u8string()},
+         {"Count", std::to_string(screenshot_count)}
+#endif
+        });
 
-	log::message(log::level::info, "Saving screenshot to '%s'.", screenshot_path.u8string().c_str());
+    screenshot_name += postfix;
+    screenshot_name += (_screenshot_format == 0   ? ".bmp"
+                        : _screenshot_format == 1 ? ".png"
+                                                  : ".jpg");
 
-	_last_screenshot_save_successful = true;
+    _current_screenshot_path = g_reshade_base_path / _screenshot_path /
+                               std::filesystem::u8path(screenshot_name);
+  }
+  const std::filesystem::path screenshot_path = _current_screenshot_path;
+  log::message(log::level::info, "Saving screenshot to '%s'.",
+               screenshot_path.u8string().c_str());
+
+  _last_screenshot_save_successful = true;
 
 	if (std::vector<uint8_t> pixels(static_cast<size_t>(_width) * static_cast<size_t>(_height) * 4);
 		capture_screenshot(pixels.data()))
@@ -4899,10 +4942,14 @@ void reshade::runtime::save_screenshot(const std::string_view postfix)
 }
 bool reshade::runtime::execute_screenshot_post_save_command(const std::filesystem::path &screenshot_path, unsigned int screenshot_count)
 {
-	if (_screenshot_post_save_command.empty() || _screenshot_post_save_command.extension() != L".exe")
-		return false;
+//allow directly calling runnable extensions. Ok just calling directly may or may not have worked, I think windows UAC stuff was giving me trouble but either way
+//going to allow calling these directly for the user and just handle it as a cmd call behind the scenes
+  if (_screenshot_post_save_command.empty() || (std::set<std::wstring>{L".exe", L".py", L".bat", L".cmd", L".sh"}.count(_screenshot_post_save_command.extension().wstring()) == 0))
+      return false;
 
 	std::string command_line;
+    if (_screenshot_post_save_command.extension() == L".py")  command_line = "python ";
+    else if (_screenshot_post_save_command.extension() != L".exe") command_line = "C:\Windows32\cmd.exe /C ";
 	command_line += '\"';
 	command_line += _screenshot_post_save_command.u8string();
 	command_line += '\"';

@@ -14,7 +14,7 @@
 #include <unordered_set>
 
 using namespace reshade::api;
-
+HMODULE mod;
 struct tex_data
 {
 	resource_desc desc;
@@ -280,9 +280,9 @@ static void on_present(command_queue *, swapchain *swapchain, const rect *, cons
 }
 
 // See implementation in 'utils\save_texture_image.cpp'
-extern bool save_texture_image(const resource_desc &desc, const subresource_data &data);
+extern bool save_texture_image(const resource_desc &desc, const subresource_data &data, HMODULE mod);
 
-static bool save_texture_image(command_queue *queue, resource tex, const resource_desc &desc)
+static bool save_texture_image(command_queue *queue, resource tex, const resource_desc &desc, HMODULE mod)
 {
 	device *const device = queue->get_device();
 
@@ -317,7 +317,7 @@ static bool save_texture_image(command_queue *queue, resource tex, const resourc
 	subresource_data mapped_data = {};
 	if (device->map_texture_region(intermediate, 0, nullptr, map_access::read_only, &mapped_data))
 	{
-		save_texture_image(desc, mapped_data);
+		save_texture_image(desc, mapped_data, mod);
 
 		device->unmap_texture_region(intermediate, 0);
 	}
@@ -363,7 +363,7 @@ static void draw_overlay(effect_runtime *runtime)
 			continue;
 
 		if (save_all_textures)
-			save_texture_image(runtime->get_command_queue(), tex, tex_data.desc);
+			save_texture_image(runtime->get_command_queue(), tex, tex_data.desc, mod);
 
 		filtered_texture_list.emplace_back(tex, tex_data);
 	}
@@ -390,7 +390,7 @@ static void draw_overlay(effect_runtime *runtime)
 			data.replaced_texture_srv = tex_data.last_view;
 
 		if (ImGui::IsItemClicked())
-			save_texture_image(runtime->get_command_queue(), filtered_texture_list[i].first, tex_data.desc);
+			save_texture_image(runtime->get_command_queue(), filtered_texture_list[i].first, tex_data.desc, mod);
 
 		if (aspect_ratio < 1)
 		{
@@ -421,9 +421,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 	case DLL_PROCESS_ATTACH:
 		if (!reshade::register_addon(hModule))
 			return FALSE;
-
+        mod = hModule;
 		descriptor_tracking::register_events();
-
+         
 		reshade::register_event<reshade::addon_event::init_device>(on_init_device);
 		reshade::register_event<reshade::addon_event::destroy_device>(on_destroy_device);
 		reshade::register_event<reshade::addon_event::init_command_list>(on_init_cmd_list);
@@ -441,6 +441,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 		reshade::register_overlay("TexMod", draw_overlay);
 		break;
+               
 	case DLL_PROCESS_DETACH:
 		descriptor_tracking::unregister_events();
 

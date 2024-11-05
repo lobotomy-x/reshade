@@ -54,7 +54,7 @@
     <PlatformToolset>v141</PlatformToolset>
     <PlatformToolset Condition="'$(VisualStudioVersion)'=='16.0'">v142</PlatformToolset>
     <PlatformToolset Condition="'$(VisualStudioVersion)'=='17.0'">v143</PlatformToolset>
-    <VcpkgEnabled>false</VcpkgEnabled>
+    <VcpkgEnabled>true</VcpkgEnabled>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Platform)'=='Win32'">
     <TargetName>ReShade32</TargetName>
@@ -302,10 +302,11 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ExceptionHandling>false</ExceptionHandling>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zc:threadSafeInit- /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalOptions Condition="'$(VisualStudioVersion)'&gt;='16.0'">/Zc:char8_t- %(AdditionalOptions)</AdditionalOptions>
+      <MinimalRebuild>true</MinimalRebuild>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

@@ -66,7 +66,7 @@ bool reshade::runtime::init_gui_vr()
 
 	s_vr_overlay->SetOverlayFlag(s_main_handle, vr::VROverlayFlags_SendVRSmoothScrollEvents, true);
 
-	s_vr_overlay->SetOverlayWidthInMeters(s_main_handle, 1.5f);
+	s_vr_overlay->SetOverlayWidthInMeters(s_main_handle, 2.0f);
 
 	if (!_device->create_resource(api::resource_desc(OVERLAY_WIDTH, OVERLAY_HEIGHT, 1, 1, api::format::r8g8b8a8_unorm, 1, api::memory_heap::gpu_only, api::resource_usage::render_target | api::resource_usage::copy_source), nullptr, api::resource_usage::copy_source, &_vr_overlay_tex))
 	{
