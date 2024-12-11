@@ -356,12 +356,13 @@ namespace reshade
 #endif
 #if RESHADE_GUI
 		bool _screenshot_save_gui = false;
+        // expand the AppName macro to subdirs. I previously wrote a
+        // python script to do this as a post save but thats pointless
+        bool _screenshot_path_split_appname = true;
 #endif
 		bool _screenshot_clear_alpha = true;
-		bool _screenshot_clipboard_copy = false;
 		unsigned int _screenshot_count = 0;
 		unsigned int _screenshot_format = 1;
-		unsigned int _screenshot_hdr_bits = 11;
 		unsigned int _screenshot_jpeg_quality = 90;
 		unsigned int _screenshot_key_data[4] = {};
 		std::filesystem::path _screenshot_sound_path;
@@ -437,6 +438,7 @@ namespace reshade
 		#pragma region Overlay
 		ImGuiContext *_imgui_context = nullptr;
 
+     
 		bool _show_splash = true;
 		bool _show_overlay = false;
 		unsigned int _show_fps = 2;
@@ -458,6 +460,8 @@ namespace reshade
 		unsigned int _fps_pos = 1;
 		unsigned int _clock_format = 0;
 		unsigned int _input_processing_mode = 2;
+        bool _esc_closes_overlay = true;
+
 
 		api::resource _font_atlas_tex = {};
 		api::resource_view _font_atlas_srv = {};
@@ -497,6 +501,7 @@ namespace reshade
 		#pragma endregion
 
 		#pragma region Overlay Settings
+
 		std::string _selected_language, _current_language;
 		int _font_size = 0;
 		int _editor_font_size = 0;
