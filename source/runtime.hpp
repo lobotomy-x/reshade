@@ -352,17 +352,19 @@ namespace reshade
 		#pragma region Screenshot
 #if RESHADE_FX
 		bool _screenshot_save_before = false;
-		bool _screenshot_include_preset = false;
+		//default to true for future addon
+		bool _screenshot_include_preset = true;
 #endif
 #if RESHADE_GUI
 		bool _screenshot_save_gui = false;
-        // expand the AppName macro to subdirs. I previously wrote a
-        // python script to do this as a post save but thats pointless
+        // expand the AppName macro to subdirs
         bool _screenshot_path_split_appname = true;
 #endif
 		bool _screenshot_clear_alpha = true;
+		bool _screenshot_clipboard_copy = false;
 		unsigned int _screenshot_count = 0;
 		unsigned int _screenshot_format = 1;
+		unsigned int _screenshot_hdr_bits = 11;
 		unsigned int _screenshot_jpeg_quality = 90;
 		unsigned int _screenshot_key_data[4] = {};
 		std::filesystem::path _screenshot_sound_path;
