@@ -357,9 +357,10 @@ namespace reshade
 #endif
 #if RESHADE_GUI
 		bool _screenshot_save_gui = false;
-        // expand the AppName macro to subdirs
-        bool _screenshot_path_split_appname = true;
+
 #endif
+		 // expand the AppName macro to subdirs
+        bool _screenshot_path_split_appname = true;
 		bool _screenshot_clear_alpha = true;
 		bool _screenshot_clipboard_copy = false;
 		unsigned int _screenshot_count = 0;
