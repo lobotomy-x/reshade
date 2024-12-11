@@ -34,6 +34,8 @@
 #include <stb_image_write.h>
 #include <stb_image_resize2.h>
 #include <d3dcompiler.h>
+#include <sk_hdr_png.hpp>
+
 
 bool resolve_path(std::filesystem::path &path, std::error_code &ec)
 {
@@ -189,7 +191,6 @@ reshade::runtime::runtime(api::swapchain *swapchain, api::command_queue *graphic
 	_config_path(config_path),
 	_screenshot_path(L".\\"),
 	_screenshot_name("%AppName% %Date% %Time%_%TimeMS%"), // Use a timestamp down to the millisecond because users may request more than one screenshot per-second
-	_screenshot_name("%AppName% %Date% %Time%"),
 	_screenshot_post_save_command_arguments("\"%TargetPath%\""),
 	_screenshot_post_save_command_working_directory(L".\\")
 {
@@ -4234,7 +4235,6 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 				uint32_t semantic_index = 0;
 				for (const reshadefx::texture &tex : effect.module.textures)
 				{
-					const api::resource_desc desc = _device->get_resource_desc(_device->get_resource_from_view(it->second.first));
 					if (tex.semantic.empty() || tex.semantic == "COLOR")
 						continue;
 
@@ -4242,6 +4242,7 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 
 					if (const auto it = _texture_semantic_bindings.find(tex.semantic); it != _texture_semantic_bindings.end())
 					{
+                        const api::resource_desc desc = _device->get_resource_desc(_device->get_resource_from_view(it->second.first));
 						const float pixel_size[4] = {
 							1.0f / desc.texture.width,
 							1.0f / desc.texture.height
@@ -4798,10 +4799,9 @@ void reshade::runtime::save_screenshot(const std::string_view postfix) {
   const unsigned int screenshot_count = _screenshot_count;
   std::filesystem::path _current_screenshot_path;
   if (_screenshot_path_split_appname) {
-	 // I initially removed the appname from the macro to prevent having screenshots named AppName\AppName
-	 // but removing entirely might be too heavy handed?
-    // Maybe this is okay? it would remove the appname and leading whitespace if people have not changed their target path but select this option
-    if (_screenshot_name == "%AppName% %Date% %Time%") _screenshot_name = "%Date% %Time%";
+	 // This will remove the appname and leading whitespace if people have not changed their target path but select this option. Also updates to new default
+         if (_screenshot_name == "%AppName% %Date% %Time%_%TimeMS%" || _screenshot_name == "%AppName% %Date% %Time%")
+           _screenshot_name = "%Date% %Time%_%TimeMS%";
     std::string screenshot_name = expand_macro_string(_screenshot_name,		
          {{"AppName", g_target_executable_path.stem().u8string()},
 #if RESHADE_FX
@@ -4962,8 +4962,11 @@ bool reshade::runtime::execute_screenshot_post_save_command(const std::filesyste
       return false;
 
 	std::string command_line;
-    if (_screenshot_post_save_command.extension() == L".py")  command_line = "python ";
-    else if (_screenshot_post_save_command.extension() != L".exe") command_line = "C:/Windows/System32/cmd.exe /C ";
+	//technically not needed if they installed python correctly but if we're gonna handle it we may as well make sure its done right
+    if (_screenshot_post_save_command.extension() == L".py" || _screenshot_post_save_command.extension() == L".pyw")
+          command_line = "python ";
+	//in truth you could just do this yourself prior to this change but this makes it a bit more user friendly
+    else if (_screenshot_post_save_command.extension() != L".exe") command_line = "cmd /C ";
 	command_line += '\"';
 	command_line += _screenshot_post_save_command.u8string();
 	command_line += '\"';
@@ -5006,7 +5009,8 @@ bool reshade::runtime::get_texture_data(api::resource resource, api::resource_us
 		view_format != api::format::r8g8b8x8_unorm &&
 		view_format != api::format::b8g8r8x8_unorm &&
 		view_format != api::format::r10g10b10a2_unorm &&
-		view_format != api::format::b10g10r10a2_unorm)
+		view_format != api::format::b10g10r10a2_unorm &&
+		view_format != api::format::r16g16b16a16_float)
 	{
 		log::message(log::level::error, "Screenshots are not supported for format %u!", static_cast<uint32_t>(desc.texture.format));
 		return false;
