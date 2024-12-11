@@ -1593,11 +1593,13 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		const bool block_input = _input_processing_mode != 0 && (_show_overlay || _block_input_next_frame);
+		const bool block_input = _input_processing_mode != 0 && (_show_overlay || _block_input_next_frame);\
+		const bool block_mouse_input = block_input && (imgui_io.WantCaptureMouse || _input_processing_mode == 2);
+		const bool block_keyboard_input = block_input && (imgui_io.WantCaptureKeyboard || _input_processing_mode == 2);
 
-		_input->block_mouse_input(block_input && (imgui_io.WantCaptureMouse || _input_processing_mode == 2));
-		_input->block_keyboard_input(block_input && (imgui_io.WantCaptureKeyboard || _input_processing_mode == 2));
-		_input->immobilize_cursor(_show_overlay || _block_input_next_frame || (block_input && (imgui_io.WantCaptureMouse || _input_processing_mode == 2)));
+		_input->block_mouse_input(block_mouse_input);
+		_input->block_keyboard_input(block_keyboard_input);
+		_input->block_mouse_cursor_warping(_show_overlay || _block_input_next_frame || block_mouse_input);
 	}
 
 	if (ImDrawData *const draw_data = ImGui::GetDrawData();
@@ -2261,12 +2263,22 @@ void reshade::runtime::draw_gui_settings()
 				"HH-mm-ss");
 		}
 
-		modified |= ImGui::Combo(_("Screenshot format"), reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
+		// HDR screenshots only support PNG, and have no alpha channel
+		if (_back_buffer_format == reshade::api::format::r16g16b16a16_float ||
+			_back_buffer_color_space == reshade::api::color_space::hdr10_st2084)
+		{
+			modified |= ImGui::Checkbox(_("Copy image to clipboard"), &_screenshot_clipboard_copy);
+			modified |= ImGui::SliderInt(_("HDR PNG quality"), reinterpret_cast<int *>(&_screenshot_hdr_bits), 7, 16, "%d bit", ImGuiSliderFlags_AlwaysClamp);
+		}
+		else
+		{
+			modified |= ImGui::Combo(_("Screenshot format"), reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
 
 		if (_screenshot_format == 2)
-			modified |= ImGui::SliderInt(_("JPEG quality"), reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+				modified |= ImGui::SliderInt(_("JPEG quality"), reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
 		else
-			modified |= ImGui::Checkbox(_("Clear alpha channel"), &_screenshot_clear_alpha);
+				modified |= ImGui::Checkbox(_("Clear alpha channel"), &_screenshot_clear_alpha);
+		}
 
 #if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Save current preset file"), &_screenshot_include_preset);
@@ -2274,7 +2286,10 @@ void reshade::runtime::draw_gui_settings()
 #endif
 		modified |= ImGui::Checkbox(_("Save separate image with the overlay visible"), &_screenshot_save_gui);
 		modified |= ImGui::Checkbox(_("Split into folders by app name"),&_screenshot_path_split_appname);
-        ImGui::SetItemTooltip(_("Split save paths into folders by App Name\nUseful if you have multiple games sharing the same screenshot directory"));
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+		{
+        ImGui::SetItemTooltip(_("Split save paths into folders by App Name.\nUseful if you have multiple games sharing the same screenshot directory"));
+		}
 		modified |= imgui::file_input_box(_("Screenshot sound"), "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
 		ImGui::SetItemTooltip(_("Audio file that is played when taking a screenshot."));
 
