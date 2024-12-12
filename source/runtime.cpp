@@ -4798,11 +4798,16 @@ static std::string expand_macro_string(const std::string &input, std::vector<std
 void reshade::runtime::save_screenshot(const std::string_view postfix) {
   const unsigned int screenshot_count = _screenshot_count;
   std::filesystem::path _current_screenshot_path;
-  if (_screenshot_path_split_appname) {
+    if (_screenshot_path_split_appname) {
+    std::string _screenshot_name_split =
+        (_screenshot_name == "%AppName% %Date% %Time%_%TimeMS%" ||
+         _screenshot_name == "%AppName% %Date% %Time%")
+            ? "%Date% %Time%_%TimeMS%"
+            : _screenshot_name;
 	 // This will remove the appname and leading whitespace if people have not changed their target path but select this option. Also updates to new default
-         if (_screenshot_name == "%AppName% %Date% %Time%_%TimeMS%" || _screenshot_name == "%AppName% %Date% %Time%")
-           _screenshot_name = "%Date% %Time%_%TimeMS%";
-    std::string screenshot_name = expand_macro_string(_screenshot_name,		
+        // if (_screenshot_name == "%AppName% %Date% %Time%_%TimeMS%" || _screenshot_name == "%AppName% %Date% %Time)  _screenshot_name = "%Date% %Time%_%TimeMS%";
+    std::string screenshot_name = expand_macro_string(
+        _screenshot_name_split,		
          {{"AppName", g_target_executable_path.stem().u8string()},
 #if RESHADE_FX
         {"PresetName", _current_preset_path.stem().u8string()},
