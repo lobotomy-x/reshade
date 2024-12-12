@@ -4963,13 +4963,13 @@ void reshade::runtime::save_screenshot(const std::string_view postfix) {
 bool reshade::runtime::execute_screenshot_post_save_command(const std::filesystem::path &screenshot_path, unsigned int screenshot_count)
 {
   //allows for calling python scripts or other runnables
-  if (_screenshot_post_save_command.empty() || (std::set<std::wstring>{L".exe", L".py", L".pyx", L".pyw", L".bat", L".cmd", L".sh"}.count(_screenshot_post_save_command.extension().wstring()) == 0))
+  if (_screenshot_post_save_command.empty() || (std::set<std::wstring>{L".exe", L".py", L".pyx", L".pyw", L".bat", L".cmd", L".sh", L".ps1"}.count(_screenshot_post_save_command.extension().wstring()) == 0))
       return false;
 
 	std::string command_line;
 	//technically not needed if they installed python correctly but if we're gonna handle it we may as well make sure its done right
-    if (_screenshot_post_save_command.extension() == L".py" || _screenshot_post_save_command.extension() == L".pyw")
-          command_line = "python ";
+    if (_screenshot_post_save_command.extension() == L".py" || _screenshot_post_save_command.extension() == L".pyw") command_line = "python ";
+   else if (_screenshot_post_save_command.extension() != L".ps1") command_line = "Powershell -File  ";
 	//in truth you could just do this yourself prior to this change but this makes it a bit more user friendly
     else if (_screenshot_post_save_command.extension() != L".exe") command_line = "cmd /C ";
 	command_line += '\"';
