@@ -87,8 +87,10 @@ static void unpack_bc4_value(uint8_t alpha_0, uint8_t alpha_1, uint32_t alpha_in
 	}
 }
 
-bool save_texture_image(const resource_desc &desc, const subresource_data &data)
+// I guess if someone is using this file in their own addon it could be a breaking change but otherwise I don't see any harm
+bool save_texture_image(const resource_desc &desc, const subresource_data &data, std::filesystem::path texture_dump_path)
 {
+
 #if RESHADE_ADDON_TEXTURE_SAVE_HASH_TEXMOD
 	// Behavior of the original TexMod (see https://github.com/codemasher/texmod/blob/master/uMod_DX9/uMod_TextureFunction.cpp#L41)
 	const uint32_t hash = ~compute_crc32(
@@ -404,27 +406,19 @@ bool save_texture_image(const resource_desc &desc, const subresource_data &data)
 		return false;
 	}
 
-	// Prepend executable directory to image files
-	wchar_t file_prefix[MAX_PATH] = L"";
-	GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
-
-	std::filesystem::path dump_path = file_prefix;
-	dump_path  = dump_path.parent_path();
-	dump_path /= RESHADE_ADDON_TEXTURE_SAVE_DIR;
-
-	if (std::filesystem::exists(dump_path) == false)
-		std::filesystem::create_directory(dump_path);
+	if (std::filesystem::exists(texture_dump_path) == false)
+		std::filesystem::create_directory(texture_dump_path);
 
 	wchar_t hash_string[11];
 	swprintf_s(hash_string, L"0x%08X", hash);
 
-	dump_path /= hash_string;
-	dump_path += RESHADE_ADDON_TEXTURE_SAVE_FORMAT;
+	texture_dump_path /= hash_string;
+	texture_dump_path += RESHADE_ADDON_TEXTURE_SAVE_FORMAT;
 
-	if (dump_path.extension() == L".bmp")
-		return stbi_write_bmp(dump_path.u8string().c_str(), desc.texture.width, desc.texture.height, 4, rgba_pixel_data.data()) != 0;
-	else if (dump_path.extension() == L".png")
-		return stbi_write_png(dump_path.u8string().c_str(), desc.texture.width, desc.texture.height, 4, rgba_pixel_data.data(), desc.texture.width * 4) != 0;
+	if (texture_dump_path.extension() == L".bmp")
+		return stbi_write_bmp(texture_dump_path.u8string().c_str(), desc.texture.width, desc.texture.height, 4, rgba_pixel_data.data()) != 0;
+	else if (texture_dump_path.extension() == L".png")
+		return stbi_write_png(texture_dump_path.u8string().c_str(), desc.texture.width, desc.texture.height, 4, rgba_pixel_data.data(), desc.texture.width * 4) != 0;
 	else
 		return false;
 }

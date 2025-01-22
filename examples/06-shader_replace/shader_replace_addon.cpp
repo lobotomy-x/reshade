@@ -11,7 +11,7 @@
 #include <filesystem>
 
 using namespace reshade::api;
-
+std::filesystem::path replace_path;
 constexpr uint32_t SPIRV_MAGIC = 0x07230203;
 
 static thread_local std::vector<std::vector<uint8_t>> s_data_to_delete;
@@ -28,14 +28,6 @@ static bool load_shader_code(device_api device_type, shader_desc &desc, std::vec
 		extension = L".spv"; // Vulkan uses SPIR-V (and sometimes OpenGL does too)
 	else if (device_type == device_api::opengl)
 		extension = desc.code_size > 5 && std::strncmp(static_cast<const char *>(desc.code), "!!ARB", 5) == 0 ? L".txt" : L".glsl"; // OpenGL otherwise uses plain text ARB assembly language or GLSL
-
-	// Prepend executable file name to image files
-	wchar_t file_prefix[MAX_PATH] = L"";
-	GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
-
-	std::filesystem::path replace_path = file_prefix;
-	replace_path  = replace_path.parent_path();
-	replace_path /= RESHADE_ADDON_SHADER_LOAD_DIR;
 
 	wchar_t hash_string[11];
 	swprintf_s(hash_string, L"0x%08X", shader_hash);
@@ -99,6 +91,13 @@ static void on_after_create_pipeline(device *, pipeline_layout, uint32_t, const 
 	s_data_to_delete.clear();
 }
 
+void set_replace_path(HMODULE mod) {
+    wchar_t file_prefix[MAX_PATH] = L"";
+    GetModuleFileNameW(mod, file_prefix, ARRAYSIZE(file_prefix));
+	replace_path = file_prefix;
+	replace_path = replace_path.parent_path();
+    replace_path /= RESHADE_ADDON_SHADER_LOAD_DIR;
+}
 extern "C" __declspec(dllexport) const char *NAME = "Shader Replace";
 extern "C" __declspec(dllexport) const char *DESCRIPTION = "Example add-on that replaces shader binaries before they are used by the application with binaries from disk (\"" RESHADE_ADDON_SHADER_LOAD_DIR "\" directory).";
 
@@ -111,6 +110,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			return FALSE;
 		reshade::register_event<reshade::addon_event::create_pipeline>(on_create_pipeline);
 		reshade::register_event<reshade::addon_event::init_pipeline>(on_after_create_pipeline);
+                set_replace_path(hModule);
 		break;
 	case DLL_PROCESS_DETACH:
 		reshade::unregister_addon(hModule);

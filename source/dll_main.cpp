@@ -109,6 +109,18 @@ std::filesystem::path get_system_path()
 	return result = buf;
 }
 
+// would like to get setup changes out to coincide with this for next release as it opens a lot of doors. example addon changes go alongside this as well
+
+/// <summary>
+/// If the reshade dll has not been named to wrap a system dll and its not being loaded from the default global path for Vulkan and VR support we should assume its being injected
+/// </summary>
+bool is_external_install() {
+  return (g_reshade_dll_path.filename() == L"ReShade64.dll" ||
+          g_reshade_dll_path.filename() == L"ReShade32.dll") &&
+         g_reshade_dll_path.parent_path() != "C:/ProgramData/ReShade";
+}
+
+
 /// <summary>
 /// Returns the path to the module file identified by the specified <paramref name="module"/> handle.
 /// </summary>
@@ -140,7 +152,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			const bool is_dinput = _wcsnicmp(module_name.c_str(), L"dinput", 6) == 0;
 
 			// UWP apps do not have write access to the application directory, so never default the base path to it for them
-			const bool default_base_to_target_executable_path = !is_d3d && !is_dxgi && !is_opengl && !is_dinput && !is_uwp_app();
+			const bool default_base_to_target_executable_path = !is_d3d && !is_dxgi && !is_opengl && !is_dinput && !is_uwp_app() && !is_external_install();
 
 			g_reshade_base_path = get_base_path(default_base_to_target_executable_path);
 

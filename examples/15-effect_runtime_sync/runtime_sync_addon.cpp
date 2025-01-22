@@ -23,10 +23,12 @@ static void on_init(effect_runtime *runtime)
 
 	if (!reshade::get_config_value(nullptr, "ADDON", "SyncEffectRuntimes", s_sync))
 		// Enable synchronization by default if application is using VR
+		// Adding this so it doesn't try to sync for now as UEVR is going to need special handling but still uses openxr_loader
+		// probably pointless change for now but its also pointless to try to sync with a uevr app
 #ifndef _WIN64
-		s_sync = GetModuleHandleW(L"vrclient.dll") != nullptr || GetModuleHandleW(L"openxr_loader.dll") != nullptr;
+                s_sync = GetModuleHandleW(L"vrclient.dll") != nullptr || ( GetModuleHandleW(L"openxr_loader.dll") != nullptr && GetModuleHandleW(L"UEVRBackend.dll") == nullptr);
 #else
-		s_sync = GetModuleHandleW(L"vrclient_x64.dll") != nullptr || GetModuleHandleW(L"openxr_loader.dll") != nullptr;
+		s_sync = GetModuleHandleW(L"vrclient_x64.dll") != nullptr || ( GetModuleHandleW(L"openxr_loader.dll") != nullptr && GetModuleHandleW(L"UEVRBackend.dll") == nullptr);
 #endif
 }
 static void on_destroy(effect_runtime *runtime)

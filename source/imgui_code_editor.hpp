@@ -71,7 +71,8 @@ namespace reshade::imgui
 		{
 			normal,
 			word,
-			line
+			line,
+            block
 		};
 
 		static const char *get_palette_color_name(unsigned int index);

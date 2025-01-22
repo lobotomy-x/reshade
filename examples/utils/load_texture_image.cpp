@@ -14,7 +14,8 @@
 
 using namespace reshade::api;
 
-bool load_texture_image(const resource_desc &desc, subresource_data &data, std::vector<std::vector<uint8_t>> &data_to_delete)
+// I guess if someone is using this file in their own addon it could be a breaking change but otherwise I don't see any harm
+bool load_texture_image(const resource_desc &desc, subresource_data &data, std::vector<std::vector<uint8_t>> &data_to_delete, std::filesystem::path replace_path)
 {
 #if RESHADE_ADDON_TEXTURE_LOAD_HASH_TEXMOD
 	// Behavior of the original TexMod (see https://github.com/codemasher/texmod/blob/master/uMod_DX9/uMod_TextureFunction.cpp#L41)
@@ -30,14 +31,6 @@ bool load_texture_image(const resource_desc &desc, subresource_data &data, std::
 		static_cast<const uint8_t *>(data.data),
 		format_slice_pitch(desc.texture.format, data.row_pitch, desc.texture.height));
 #endif
-
-	// Prepend executable directory to image files
-	wchar_t file_prefix[MAX_PATH] = L"";
-	GetModuleFileNameW(nullptr, file_prefix, ARRAYSIZE(file_prefix));
-
-	std::filesystem::path replace_path = file_prefix;
-	replace_path  = replace_path.parent_path();
-	replace_path /= RESHADE_ADDON_TEXTURE_LOAD_DIR;
 
 	wchar_t hash_string[11];
 	swprintf_s(hash_string, L"0x%08X", hash);

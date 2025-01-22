@@ -43,3 +43,14 @@ Thumbs.db
 /res/[Vv]ersion.h
 /setup/*.ini
 /setup/Properties/AssemblyInfo.cs
+/deps/md4c.c
+/deps/imgui_markdown.h
+/deps/imgui_md.cpp
+/deps/imgui_md.h
+/deps/md4c.h
+/examples/16-swapchain_override - Copy
+/examples/examples
+/NewVer
+/setup
+/Program.cs
+/Directory.Packages.props

@@ -157,7 +157,8 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 			ImGui::SetWindowFocus(nullptr); // Reset window focus
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Z))
 			undo();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Y))
+		// add ctrl shift z redo for blender/adobe users (vs and vscode also do both)
+		else if ((ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Y)) || (ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Z)))
 			redo();
 		else if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_UpArrow))
 			if (alt && !shift) // Alt + Up moves the current line one up
@@ -208,6 +209,17 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 			select_all();
 		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Enter))
 			insert_character('\n', true);
+	// New (unimplimented) features here
+                /*
+	// I think this will actually go in runtime gui since it opens a popup, not sure yet
+	else if (ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_P))
+              open_cmd_palette();
+	else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_B))
+				scroll_to_definition();
+	else if (!ctrl && !shift && alt && ImGui::IsKeyPressed(ImGuiKey_O))
+				open_header_list();
+	else if (
+*/
 		else
 			for (ImWchar c : io.InputQueueCharacters)
 				if (c != 0 && (isprint(c) || isspace(c)))
@@ -331,8 +343,12 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 				for (; search_pos.column < _lines[search_pos.line].size(); backwards ? --search_pos.column : ++search_pos.column)
 				{
 					const int next_parenthesis_type = get_parenthesis_type(_lines[search_pos.line][search_pos.column].c);
+				
 					if (std::abs(parenthesis_type) != std::abs(next_parenthesis_type))
 						continue;
+
+// folding implementation
+//   if (std::abs(parenthesis_type) == 4) { }
 
 					if ((next_parenthesis_type < 0 && (backwards ? --parentheses_level : ++parentheses_level) == 0) ||
 						(next_parenthesis_type > 0 && (backwards ? ++parentheses_level : --parentheses_level) == 0))

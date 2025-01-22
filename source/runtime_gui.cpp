@@ -35,9 +35,20 @@ static bool filter_text(const std::string_view text, const std::string_view filt
 }
 static auto filter_name(ImGuiInputTextCallbackData *data) -> int
 {
-	// A file name cannot contain any of the following characters
-	return data->EventChar == L'\"' || data->EventChar == L'*' || data->EventChar == L'/' || data->EventChar == L':' || data->EventChar == L'<' || data->EventChar == L'>' || data->EventChar == L'?' || data->EventChar == L'\\' || data->EventChar == L'|';
+    // A file name cannot contain any of the following characters
+    return data->EventChar == L'\"' || data->EventChar == L'*' || data->EventChar == L'/' || data->EventChar == L':' || data->EventChar == L'<' || data->EventChar == L'>' || data->EventChar == L'?' || data->EventChar == L'\\' || data->EventChar == L'|';
 }
+
+static auto filter_path_name(ImGuiInputTextCallbackData *data) -> int
+{
+    // Allow slashes in string. Special case for screenshot path/name combined input field.
+ // Avoids messiness of changing UI text by just handling cases of duplicates when we process the string
+    return data->EventChar == L'\"' || data->EventChar == L'*' ||
+           data->EventChar == L':' || data->EventChar == L'<' || 
+           data->EventChar == L'>' || data->EventChar == L'?' ||
+           data->EventChar == L'|';
+}
+
 
 template <typename F>
 static void parse_errors(const std::string_view errors, F &&callback)
@@ -103,9 +114,11 @@ void reshade::runtime::init_gui()
 
 	ImGuiIO &imgui_io = _imgui_context->IO;
 	imgui_io.IniFilename = nullptr;
-	imgui_io.ConfigFlags = ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
+	// this doesn't work of course but it technically is implemented on imgui side of things with this and another small addition later.
+    // obviously at minimum we'd need to address how reshade calculates and limits mouse position. I also genuinely can't tell what's happening with the backend
+    // is it just win32 + whatever rendering api or is technically a custom backend? if the former we need to enable backend flag somewhere earlier than this call
+	imgui_io.ConfigFlags = ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_ViewportsEnable;
 	imgui_io.BackendFlags = ImGuiBackendFlags_HasMouseCursors | ImGuiBackendFlags_RendererHasVtxOffset;
-
 	ImGuiStyle &imgui_style = _imgui_context->Style;
 	// Disable rounding by default
 	imgui_style.GrabRounding = 0.0f;
@@ -836,19 +849,24 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		if (_show_overlay && !_ignore_shortcuts && !_imgui_context->IO.NavVisible && _input->is_key_pressed(0x1B /* VK_ESCAPE */))
-			show_overlay = false; // Close when pressing the escape button and not currently navigating with the keyboard
-		else if (!_ignore_shortcuts && _input->is_key_pressed(_overlay_key_data, _force_shortcut_modifiers) && _imgui_context->ActiveId == 0)
-			show_overlay = !_show_overlay;
+		 if (_show_overlay && !_ignore_shortcuts && !_imgui_context->IO.NavVisible && _input->is_key_pressed(0x1B /* VK_ESCAPE */) &&
+              ((_input_processing_mode == 2 || (_input_processing_mode == 1  &&  (_input->is_blocking_any_mouse_input() || _input->is_blocking_any_keyboard_input())))))
+            show_overlay = false;
+        // Close when pressing the escape button and not currently navigating with the keyboard. Now respects options to pass through inputs to the game
+		// If set to pass all input to the game you must use the reshade overlay key (REST users with stockholm syndrome might like this)
+        // Conveniently if using input mode 1, you can double press escape and close the overlay as the first press will pass through to the game but also focuses the active ImGui window
+       // Since that works perfectly as a panic option I think this is a totally okay change to make without needing additional config, just a small note in the changelogs should suffice
+        else if (!_ignore_shortcuts && _input->is_key_pressed(_overlay_key_data, _force_shortcut_modifiers) && _imgui_context->ActiveId == 0)
+            show_overlay = !_show_overlay;
 
-		if (!_ignore_shortcuts)
-		{
-			if (_input->is_key_pressed(_fps_key_data, _force_shortcut_modifiers))
-				_show_fps = _show_fps ? 0 : 1;
-			if (_input->is_key_pressed(_frametime_key_data, _force_shortcut_modifiers))
-				_show_frametime = _show_frametime ? 0 : 1;
-		}
-	}
+        if (!_ignore_shortcuts)
+        {
+            if (_input->is_key_pressed(_fps_key_data, _force_shortcut_modifiers))
+                _show_fps = _show_fps ? 0 : 1;
+            if (_input->is_key_pressed(_frametime_key_data, _force_shortcut_modifiers))
+                _show_frametime = _show_frametime ? 0 : 1;
+        }
+    }
 
 	if (_input_gamepad != nullptr)
 	{
@@ -914,11 +932,19 @@ void reshade::runtime::draw_gui()
 #endif
 		)
 	{
+
+		// I'm assuming this block is one place where we'll need to make some changes for multiviewport
 		if (_input != nullptr)
 		{
 			_input->block_mouse_input(false);
 			_input->block_keyboard_input(false);
 			_input->block_mouse_cursor_warping(false);
+		}
+				// Update and Render additional Platform Windows
+		if ( _imgui_context->IO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+		{
+		    ImGui::UpdatePlatformWindows();
+		    ImGui::RenderPlatformWindowsDefault();
 		}
 		return; // Early-out to avoid costly ImGui calls when no GUI elements are on the screen
 	}
@@ -942,7 +968,7 @@ void reshade::runtime::draw_gui()
 
 		// Scale mouse position in case render resolution does not match the window size
 		unsigned int max_position[2];
-		_input->max_mouse_position(max_position);
+          _input->max_mouse_position(max_position);
 		imgui_io.AddMousePosEvent(
 			_input->mouse_position_x() * (imgui_io.DisplaySize.x / max_position[0]),
 			_input->mouse_position_y() * (imgui_io.DisplaySize.y / max_position[1]));
@@ -2224,9 +2250,12 @@ void reshade::runtime::draw_gui_settings()
 
 		modified |= imgui::directory_input_box(_("Screenshot path"), _screenshot_path, _file_selection_path);
 
-		char name[260];
+	
+		char name[520];
 		name[_screenshot_name.copy(name, sizeof(name) - 1)] = '\0';
-		if (ImGui::InputText(_("Screenshot name"), name, sizeof(name), ImGuiInputTextFlags_CallbackCharFilter, filter_name))
+		// change to new specific callback  filter allowing slashes
+		// in the future would like to add implementations for ImGuiInputTextFlags_CallbackCompletion, ImGuiInputTextFlags_CallbackHistory     
+		if (ImGui::InputText(_("Screenshot name"), name, sizeof(name), ImGuiInputTextFlags_CallbackCharFilter, filter_path_name))
 		{
 			modified = true;
 			_screenshot_name = name;
@@ -2235,19 +2264,20 @@ void reshade::runtime::draw_gui_settings()
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 		{
 			ImGui::SetTooltip(_(
-				"Macros you can add that are resolved during saving:\n"
-				"  %%AppName%%         Name of the application (%s)\n"
-				"  %%PresetName%%      File name without extension of the current preset file (%s)\n"
-				"  %%Date%%            Current date in format '%s'\n"
-				"  %%DateYear%%        Year component of current date\n"
-				"  %%DateMonth%%       Month component of current date\n"
-				"  %%DateDay%%         Day component of current date\n"
-				"  %%Time%%            Current time in format '%s'\n"
-				"  %%TimeHour%%        Hour component of current time\n"
-				"  %%TimeMinute%%      Minute component of current time\n"
-				"  %%TimeSecond%%      Second component of current time\n"
-				"  %%TimeMS%%          Milliseconds fraction of current time\n"
-				"  %%Count%%           Number of screenshots taken this session\n"),
+                "Macros you can add that are resolved during saving:\n"
+                "  %%AppName%%         Name of the application (%s)\n"
+                "  %%BeforeAfter%%     Before and after rendering effects\n"
+                "  %%PresetName%%      File name without extension of the current preset file (%s)\n"
+                "  %%Date%%            Current date in format '%s'\n"
+                "  %%DateYear%%        Year component of current date\n"
+                "  %%DateMonth%%       Month component of current date\n"
+                "  %%DateDay%%         Day component of current date\n"
+                "  %%Time%%            Current time in format '%s'\n"
+                "  %%TimeHour%%        Hour component of current time\n"
+                "  %%TimeMinute%%      Minute component of current time\n"
+                "  %%TimeSecond%%      Second component of current time\n"
+                "  %%TimeMS%%          Milliseconds fraction of current time\n"
+                "  %%Count%%           Number of screenshots taken this session\n" ),
 				g_target_executable_path.stem().u8string().c_str(),
 #if RESHADE_FX
 				_current_preset_path.stem().u8string().c_str(),
@@ -2284,7 +2314,7 @@ void reshade::runtime::draw_gui_settings()
 		modified |= imgui::file_input_box(_("Screenshot sound"), "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
 		ImGui::SetItemTooltip(_("Audio file that is played when taking a screenshot."));
 
-		modified |= imgui::file_input_box(_("Post-save command"), "command.exe", _screenshot_post_save_command, _file_selection_path, { L".exe" });
+		modified |= imgui::file_input_box(_("Post-save command"), "command.exe", _screenshot_post_save_command, _file_selection_path,  {L".exe", L".py", L".pyw", L".bat"});
 		ImGui::SetItemTooltip(_(
 			"Executable that is called after saving a screenshot.\n"
 			"This can be used to perform additional processing on the image (e.g. compressing it with an image optimizer)."));
@@ -2302,24 +2332,25 @@ void reshade::runtime::draw_gui_settings()
 			const std::string extension = _screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg";
 
 			ImGui::SetTooltip(_(
-				"Macros you can add that are resolved during command execution:\n"
-				"  %%AppName%%         Name of the application (%s)\n"
-				"  %%PresetName%%      File name without extension of the current preset file (%s)\n"
-				"  %%Date%%            Current date in format '%s'\n"
-				"  %%DateYear%%        Year component of current date\n"
-				"  %%DateMonth%%       Month component of current date\n"
-				"  %%DateDay%%         Day component of current date\n"
-				"  %%Time%%            Current time in format '%s'\n"
-				"  %%TimeHour%%        Hour component of current time\n"
-				"  %%TimeMinute%%      Minute component of current time\n"
-				"  %%TimeSecond%%      Second component of current time\n"
-				"  %%TimeMS%%          Milliseconds fraction of current time\n"
-				"  %%TargetPath%%      Full path to the screenshot file (%s)\n"
-				"  %%TargetDir%%       Full path to the screenshot directory (%s)\n"
-				"  %%TargetFileName%%  File name of the screenshot file (%s)\n"
-				"  %%TargetExt%%       File extension of the screenshot file (%s)\n"
-				"  %%TargetName%%      File name without extension of the screenshot file (%s)\n"
-				"  %%Count%%           Number of screenshots taken this session\n"),
+                "Macros you can add that are resolved during command execution:\n"
+                "  %%AppName%%         Name of the application (%s)\n"
+                "  %%BeforeAfter%%     Before and after rendering effects\n"
+                "  %%PresetName%%      File name without extension of the current preset file (%s)\n"
+                "  %%Date%%            Current date in format '%s'\n"
+                "  %%DateYear%%        Year component of current date\n"
+                "  %%DateMonth%%       Month component of current date\n"
+                "  %%DateDay%%         Day component of current date\n"
+                "  %%Time%%            Current time in format '%s'\n"
+                "  %%TimeHour%%        Hour component of current time\n"
+                "  %%TimeMinute%%      Minute component of current time\n"
+                "  %%TimeSecond%%      Second component of current time\n"
+                "  %%TimeMS%%          Milliseconds fraction of current time\n"
+                "  %%TargetPath%%      Full path to the screenshot file (%s)\n"
+                "  %%TargetDir%%       Full path to the screenshot directory (%s)\n"
+                "  %%TargetFileName%%  File name of the screenshot file (%s)\n"
+                "  %%TargetExt%%       File extension of the screenshot file (%s)\n"
+                "  %%TargetName%%      File name without extension of the screenshot file (%s)\n"
+                "  %%Count%%           Number of screenshots taken this session\n"),
 				g_target_executable_path.stem().u8string().c_str(),
 #if RESHADE_FX
 				_current_preset_path.stem().u8string().c_str(),
@@ -2504,6 +2535,23 @@ void reshade::runtime::draw_gui_settings()
 			ImGui::EndChild();
 		}
 		#pragma endregion
+
+        // if (ImGui::ArrowButtonEx("<", ImGuiDir_Left, ImVec2(button_height, button_height), ImGuiButtonFlags_NoNavFocus))
+        //     if (switch_to_next_font(_font_path.parent_path(), true))
+        //             _imgui_context->IO.Fonts->TexReady = false;
+
+        // ImGui::SetItemTooltip(_("Previous font"));
+
+        // ImGui::SameLine(0, button_spacing);
+
+        // if (ImGui::ArrowButtonEx(">", ImGuiDir_Right, ImVec2(button_height, button_height), ImGuiButtonFlags_NoNavFocus))
+        //     if (switch_to_next_font(_font_path.parent_path(), false))
+        //             _imgui_context->IO.Fonts->TexReady = false;
+        // ImGui::SetItemTooltip(_("Next font"));
+
+        // ImGui::SameLine();
+
+
 
 		if (imgui::font_input_box(_("Global font"), _default_font_path.empty() ? "ProggyClean.ttf" : _default_font_path.u8string().c_str(), _font_path, _file_selection_path, _font_size))
 		{
@@ -4125,8 +4173,17 @@ void reshade::runtime::draw_technique_editor()
 				if (ImGui::Button((ICON_FK_FOLDER " " + std::string(_("Open folder in explorer"))).c_str(), ImVec2(18.0f * _font_size, 0)))
 					utils::open_explorer(effect.source_file);
 
-				ImGui::Separator();
+				// ImGui::Separator();
 
+				// if (ImGui::popup_button((std::string(_("Hide failed effect"))).c_str(), 18.0f * _font_size))
+				// {
+				// 	std::vector<size_t> technique_indices = _technique_sorting;
+				// 	technique_indices.push_back(technique_indices[index]);
+				// 	technique_indices.erase(technique_indices.begin() + index);
+				// 	reorder_techniques(std::move(technique_indices));
+				// }
+
+				ImGui::Separator();
 				if (imgui::popup_button((ICON_FK_PENCIL " " + std::string(_("Edit source code"))).c_str(), 18.0f * _font_size))
 				{
 					std::unordered_map<std::string_view, std::string> file_errors_lookup;
@@ -4948,7 +5005,7 @@ void reshade::runtime::destroy_imgui_resources()
 	_device->destroy_sampler(_imgui_sampler_state);
 	_imgui_sampler_state = {};
 	_device->destroy_pipeline(_imgui_pipeline);
-	_imgui_pipeline = {};
+        _imgui_pipeline = {};
 	_device->destroy_pipeline_layout(_imgui_pipeline_layout);
 	_imgui_pipeline_layout = {};
 }

@@ -6,9 +6,9 @@
 #include <reshade.hpp>
 #include "config.hpp"
 #include <vector>
-
+#include <filesystem>
 using namespace reshade::api;
-
+std::filesystem::path replace_path;
 // When a resource is being created, ReShade will first call any registered 'create_resource' callbacks, then actually create the resource and finally call any registered 'init_resource' callbacks.
 // So to modify the initial data passed to resource creation, have to allocate and fill it in a 'create_resource' callback, which is then passed along to the actual resource creation and then have to free it again in a 'init_resource' callback.
 // The problem is that multiple threads can create resources simultaneously and as such the order in which these three things happen across multiple threads is not guaranteed (e.g. 'init_resource' may be called on one thread while another thread has only just called 'create_resource').
@@ -17,7 +17,7 @@ using namespace reshade::api;
 static thread_local std::vector<std::vector<uint8_t>> s_data_to_delete;
 
 // See implementation in 'utils\load_texture_image.cpp'
-extern bool load_texture_image(const resource_desc &desc, subresource_data &data, std::vector<std::vector<uint8_t>> &data_to_delete);
+extern bool load_texture_image(const resource_desc &desc, subresource_data &data, std::vector<std::vector<uint8_t>> &data_to_delete, std::filesystem::path load_path);
 
 static inline bool filter_texture(device *device, const resource_desc &desc, const subresource_box *box)
 {
@@ -44,7 +44,7 @@ static bool on_create_texture(device *device, resource_desc &desc, subresource_d
 	if (!filter_texture(device, desc, nullptr))
 		return false;
 
-	return initial_data != nullptr && load_texture_image(desc, *initial_data, s_data_to_delete);
+	return initial_data != nullptr && load_texture_image(desc, *initial_data, s_data_to_delete,  replace_path);
 }
 static void on_after_create_texture(device *, const resource_desc &, const subresource_data *, resource_usage, resource)
 {
@@ -72,7 +72,7 @@ static bool on_copy_texture(command_list *cmd_list, resource src, uint32_t src_s
 	subresource_data new_data;
 	if (device->map_texture_region(src, src_subresource, nullptr, map_access::read_only, &new_data))
 	{
-		replace = load_texture_image(dst_desc, new_data, s_data_to_delete);
+		replace = load_texture_image(dst_desc, new_data, s_data_to_delete,  replace_path);
 
 		device->unmap_texture_region(src, src_subresource);
 	}
@@ -100,7 +100,7 @@ static bool on_update_texture(device *device, const subresource_data &data, reso
 		return false;
 
 	subresource_data new_data = data;
-	if (load_texture_image(dst_desc, new_data, s_data_to_delete))
+	if (load_texture_image(dst_desc, new_data, s_data_to_delete,  replace_path))
 	{
 		// Update texture with the new data
 		device->update_texture_region(new_data, dst, dst_subresource, dst_box);
@@ -144,7 +144,7 @@ static void on_unmap_texture(device *, resource resource, uint32_t subresource)
 
 	void *mapped_data = s_current_mapping.data.data;
 
-	if (load_texture_image(s_current_mapping.desc, s_current_mapping.data, s_data_to_delete))
+	if (load_texture_image(s_current_mapping.desc, s_current_mapping.data, s_data_to_delete,  replace_path))
 	{
 		std::memcpy(mapped_data, s_current_mapping.data.data, s_current_mapping.data.slice_pitch);
 
@@ -152,7 +152,13 @@ static void on_unmap_texture(device *, resource resource, uint32_t subresource)
 		s_data_to_delete.clear();
 	}
 }
-
+void set_replace_path(HMODULE mod) {
+    wchar_t file_prefix[MAX_PATH] = L"";
+    GetModuleFileNameW(mod, file_prefix, ARRAYSIZE(file_prefix));
+	replace_path = file_prefix;
+	replace_path = replace_path.parent_path();
+    replace_path /= RESHADE_ADDON_TEXTURE_LOAD_DIR;
+}
 extern "C" __declspec(dllexport) const char *NAME = "Texture Replace";
 extern "C" __declspec(dllexport) const char *DESCRIPTION = "Example add-on that replaces textures before they are used by the application with image files from disk (\"" RESHADE_ADDON_TEXTURE_LOAD_DIR "\" directory).";
 
@@ -169,6 +175,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		reshade::register_event<reshade::addon_event::update_texture_region>(on_update_texture);
 		reshade::register_event<reshade::addon_event::map_texture_region>(on_map_texture);
 		reshade::register_event<reshade::addon_event::unmap_texture_region>(on_unmap_texture);
+                set_replace_path(hModule);
 		break;
 	case DLL_PROCESS_DETACH:
 		reshade::unregister_addon(hModule);
