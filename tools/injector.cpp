@@ -9,6 +9,9 @@
 #include <AclAPI.h>
 #include <TlHelp32.h>
 
+#include <filesystem>
+#include <iostream>
+
 #define RESHADE_LOADING_THREAD_FUNC 1
 
 struct loading_data
@@ -92,15 +95,34 @@ static DWORD WINAPI loading_thread_func(loading_data *arg)
 }
 #endif
 
+
+  
+
 int wmain(int argc, wchar_t *argv[])
 {
-	if (argc != 2)
-	{
-		wprintf(L"usage: %s <exe name>\n", argv[0]);
-		return 0;
-	}
+	  std::wstring procName;
+    wchar_t* processName = nullptr;
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (argc != 2)
+    {
+        wprintf(L"Enter exe name: ");
+        std::getline(std::wcin, procName);
 
-	wprintf(L"Waiting for a '%s' process to spawn ...\n", argv[1]);
+        // Allocate memory for the non-constant wchar_t*
+        processName = new wchar_t[procName.size() + 1];
+        wcscpy_s(processName, procName.size() + 1, procName.c_str());
+
+        std::wcout << L"Start your game now..." << std::endl;
+    }
+    else
+    {
+        // Allocate memory for the non-constant wchar_t*
+        processName = new wchar_t[wcslen(argv[1]) + 1];
+        wcscpy_s(processName, wcslen(argv[1]) + 1, argv[1]);
+    }
+
+	
+	wprintf(L"Waiting for a '%s' process to spawn ...\n", processName );
 
 	DWORD pid = 0;
 
@@ -112,7 +134,7 @@ int wmain(int argc, wchar_t *argv[])
 		PROCESSENTRY32W process = { sizeof(process) };
 		for (BOOL next = Process32FirstW(snapshot, &process); next; next = Process32NextW(snapshot, &process))
 		{
-			if (wcscmp(process.szExeFile, argv[1]) == 0)
+			if (wcscmp(process.szExeFile, processName )== 0)
 			{
 				pid = process.th32ProcessID;
 				break;
@@ -225,3 +247,4 @@ int wmain(int argc, wchar_t *argv[])
 #endif
 	}
 }
+	
