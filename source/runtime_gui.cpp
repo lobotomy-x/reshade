@@ -1678,6 +1678,9 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SameLine();
 
+		// Cannot save in performance mode, since there are no variables to retrieve values from then
+		ImGui::BeginDisabled(_performance_mode || _is_in_preset_transition);
+
 		const bool was_auto_save_preset = _auto_save_preset;
 
 		if (imgui::toggle_button(
@@ -1713,9 +1716,6 @@ void reshade::runtime::draw_gui_home()
 
 			ImGui::SameLine(0, button_spacing);
 		}
-
-		// Cannot save in performance mode, since there are no variables to retrieve values from then
-		ImGui::BeginDisabled(_performance_mode || _is_in_preset_transition);
 
 		const auto save_and_clean_preset = _auto_save_preset || (_imgui_context->IO.KeyCtrl || _imgui_context->IO.KeyShift);
 
@@ -1990,9 +1990,7 @@ void reshade::runtime::draw_gui_home()
 				}
 			}
 
-			ImGui::BeginDisabled(_is_in_preset_transition);
 			draw_technique_editor();
-			ImGui::EndDisabled();
 		}
 		ImGui::EndChild();
 
@@ -2032,11 +2030,7 @@ void reshade::runtime::draw_gui_home()
 		const float bottom_height = ImGui::GetFrameHeightWithSpacing() + _imgui_context->Style.ItemSpacing.y + (_tutorial_index == 3 ? 175 : 0);
 
 		if (ImGui::BeginChild("##variables", ImVec2(0, -bottom_height), ImGuiChildFlags_Borders))
-		{
-			ImGui::BeginDisabled(_is_in_preset_transition);
 			draw_variable_editor();
-			ImGui::EndDisabled();
-		}
 		ImGui::EndChild();
 
 		if (_tutorial_index == 3)
@@ -2668,6 +2662,9 @@ void reshade::runtime::draw_gui_statistics()
 			long_technique_name[technique_index] = (ImGui::GetItemRectSize().x + 10.0f) > (ImGui::GetWindowWidth() * 0.33333333f);
 			if (long_technique_name[technique_index])
 				ImGui::NewLine();
+
+			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index)
+				ImGui::Text("  pass %zu", pass_index);
 		}
 
 		ImGui::EndGroup();
@@ -2687,6 +2684,9 @@ void reshade::runtime::draw_gui_statistics()
 			if (tech.average_cpu_duration != 0)
 				ImGui::Text("%*.3f ms CPU", cpu_digits + 4, tech.average_cpu_duration * 1e-6f);
 			else
+				ImGui::NewLine();
+
+			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index)
 				ImGui::NewLine();
 		}
 
@@ -2709,6 +2709,16 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::Text("%*.3f ms GPU", gpu_digits + 4, tech.average_gpu_duration * 1e-6f);
 			else
 				ImGui::NewLine();
+
+			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index)
+			{
+				const reshade::technique::pass &pass = tech.permutations[0].passes[pass_index];
+
+				if (_gather_gpu_statistics && pass.average_gpu_duration != 0)
+					ImGui::Text("%*.3f ms GPU", gpu_digits + 4, pass.average_gpu_duration * 1e-6f);
+				else
+					ImGui::NewLine();
+			}
 		}
 
 		ImGui::EndGroup();
@@ -2758,6 +2768,8 @@ void reshade::runtime::draw_gui_statistics()
 				return { "RGBA32F", 16 };
 			case reshadefx::texture_format::rgb10a2:
 				return { "RGB10A2", 4 };
+			case reshadefx::texture_format::rg11b10f:
+				return { "RG11B10F", 4 };
 			}
 		};
 
@@ -3364,6 +3376,8 @@ void reshade::runtime::draw_gui_addons()
 
 void reshade::runtime::draw_variable_editor()
 {
+	ImGui::BeginDisabled(_is_in_preset_transition);
+
 	const ImVec2 popup_pos = ImGui::GetCursorScreenPos() + ImVec2(std::max(0.f, ImGui::GetContentRegionAvail().x * 0.5f - 200.0f), ImGui::GetFrameHeightWithSpacing());
 
 	if (imgui::popup_button(_("Edit global preprocessor definitions"), ImGui::GetContentRegionAvail().x, ImGuiWindowFlags_NoMove))
@@ -4032,6 +4046,8 @@ void reshade::runtime::draw_variable_editor()
 	if (_variable_editor_tabs)
 		ImGui::EndTabBar();
 	ImGui::EndChild();
+
+	ImGui::EndDisabled();
 }
 void reshade::runtime::draw_technique_editor()
 {
@@ -4046,6 +4062,8 @@ void reshade::runtime::draw_technique_editor()
 		ImGui::PopStyleColor();
 		return;
 	}
+
+	ImGui::BeginDisabled(_is_in_preset_transition);
 
 	if (!_last_reload_successful)
 	{
@@ -4417,6 +4435,8 @@ void reshade::runtime::draw_technique_editor()
 		}
 	}
 
+	ImGui::EndDisabled();
+
 	// Move the selected technique to the position of the mouse in the list
 	if (_selected_technique < _technique_sorting.size() && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
 	{
@@ -4465,7 +4485,6 @@ void reshade::runtime::draw_technique_editor()
 				save_current_preset();
 			else
 				_preset_is_modified = true;
-			return;
 		}
 	}
 	else
