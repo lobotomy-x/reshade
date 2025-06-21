@@ -230,7 +230,9 @@ namespace reshade::imgui
 		void move_up(size_t amount = 1, bool select = false);
 		void move_down(size_t amount = 1, bool select = false);
 		void move_left(size_t amount = 1, bool select = false, bool word_mode = false);
+		void move_left_to_boundary(bool select = false);
 		void move_right(size_t amount = 1, bool select = false, bool word_mode = false);
+		void move_right_to_boundary(bool select = false);
 		void move_top(bool select = false);
 		void move_bottom(bool select = false);
 		void move_home(bool select = false);

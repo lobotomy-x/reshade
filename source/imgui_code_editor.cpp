@@ -156,7 +156,7 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 			ImGui::SetWindowFocus(nullptr); // Reset window focus
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Z))
 			undo();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Y))
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Y) || ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Z))
 			redo();
 		else if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_UpArrow))
 			if (alt && !shift) // Alt + Up moves the current line one up
@@ -170,8 +170,12 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 				move_down(1, shift);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
 			move_left(1, shift, ctrl);
+		else if (alt && ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+			move_left_to_boundary(shift);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_RightArrow))
 			move_right(1, shift, ctrl);
+		else if (alt && ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+			move_right_to_boundary(shift);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageUp))
 			move_up(static_cast<size_t>(floor((ImGui::GetWindowHeight() - 20.0f) / char_advance.y) - 4.0f), shift);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageDown))
@@ -1455,6 +1459,36 @@ void reshade::imgui::code_editor::move_left(size_t amount, bool selection, bool 
 	select(_interactive_beg, _interactive_end);
 	_scroll_to_cursor = true;
 }
+void reshade::imgui::code_editor::move_left_to_boundary(bool selection)
+{
+	assert(!_lines.empty());
+
+	const text_pos prev_pos = _cursor_pos;
+
+	// Clear selection if not holding shift 
+	if (!selection && has_selection())
+		select(_cursor_pos, _cursor_pos);
+	size_t amount = 1;
+	if (_cursor_pos.column > 1) 
+	{
+		std::string text = get_text(text_pos(_cursor_pos.line, 0), text_pos(_cursor_pos.line, _cursor_pos.column));
+		int i = _cursor_pos.column;
+		char c = text[i];
+		while (c != '-' && c != '_' && c != ' ') {
+			int i = _cursor_pos.column--;
+			char c = text[i];
+		}
+		//auto last = std::max(text.find_last_of('_', _cursor_pos.column), text.find_last_of('-', _cursor_pos.column));
+		//if (last > 1 && text[_cursor_pos.column - 1] != ' ') {
+		//	if (text[_cursor_pos.column - 1] == '-' || text[_cursor_pos.column - 1] == '_')
+		//		amount = 1;
+		//	else
+		//		amount = _cursor_pos.column - last;
+		//}
+	}
+	move_left(amount, selection, false);
+}
+
 void reshade::imgui::code_editor::move_right(size_t amount, bool selection, bool word_mode)
 {
 	assert(!_lines.empty());
@@ -1502,6 +1536,33 @@ void reshade::imgui::code_editor::move_right(size_t amount, bool selection, bool
 
 	select(_interactive_beg, _interactive_end);
 	_scroll_to_cursor = true;
+}
+void reshade::imgui::code_editor::move_right_to_boundary(bool selection)
+{
+	assert(!_lines.empty());
+
+	const text_pos prev_pos = _cursor_pos;
+
+	// Clear selection if not holding shift but continue the remaining operation
+	if (!selection && has_selection())
+		select(_cursor_pos, _cursor_pos);
+	size_t amount = 1;
+	std::string text = get_text(text_pos(_cursor_pos.line,_cursor_pos.column), text_pos(_cursor_pos.line, _lines[_cursor_pos.line].size() - 1));
+	if (_cursor_pos.column < text.size() - 2 && text[_cursor_pos.column] != ' ')
+	{
+		auto next = std::min(text.find_first_of('_', _cursor_pos.column), text.find_first_of('_', _cursor_pos.column));
+		if (next < text.size() - 1) {
+			if (text[_cursor_pos.column] == '-' || text[_cursor_pos.column] == '_')
+			{
+				amount = 1;
+			}
+			else
+			{
+				amount = next - _cursor_pos.column;
+			}
+		}
+	}
+	move_right(amount, selection, false);
 }
 void reshade::imgui::code_editor::move_top(bool selection)
 {

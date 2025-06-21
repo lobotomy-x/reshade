@@ -260,7 +260,43 @@ static std::vector<std::filesystem::path> find_files(const std::vector<std::file
 
 	return files;
 }
+std::string setup_macros(const std::string &input, std::vector<std::pair<std::string, std::string>> macros, std::chrono::system_clock::time_point now)
+{
+	const auto now_seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
+	char timestamp[21];
+	const std::time_t t = std::chrono::system_clock::to_time_t(now_seconds);
+	struct tm tm; localtime_s(&tm, &t);
 
+	std::snprintf(timestamp, std::size(timestamp), "%.4d-%.2d-%.2d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+	macros.emplace_back("Date", timestamp);
+	std::snprintf(timestamp, std::size(timestamp), "%.4d", tm.tm_year + 1900);
+	macros.emplace_back("DateYear", timestamp);
+	macros.emplace_back("Year", timestamp);
+	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_mon + 1);
+	macros.emplace_back("DateMonth", timestamp);
+	macros.emplace_back("Month", timestamp);
+	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_mday);
+	macros.emplace_back("DateDay", timestamp);
+	macros.emplace_back("Day", timestamp);
+
+	std::snprintf(timestamp, std::size(timestamp), "%.2d-%.2d-%.2d", tm.tm_hour, tm.tm_min, tm.tm_sec);
+	macros.emplace_back("Time", timestamp);
+	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_hour);
+	macros.emplace_back("TimeHour", timestamp);
+	macros.emplace_back("Hour", timestamp);
+	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_min);
+	macros.emplace_back("TimeMinute", timestamp);
+	macros.emplace_back("Minute", timestamp);
+	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_sec);
+	macros.emplace_back("TimeSecond", timestamp);
+	macros.emplace_back("Second", timestamp);
+	std::snprintf(timestamp, std::size(timestamp), "%.3lld", std::chrono::duration_cast<std::chrono::milliseconds>(now - now_seconds).count());
+	macros.emplace_back("TimeMillisecond", timestamp);
+	macros.emplace_back("Millisecond", timestamp);
+	macros.emplace_back("TimeMS", timestamp);
+
+	return expand_macro_string(input, macros);
+}
 reshade::runtime::runtime(api::swapchain *swapchain, api::command_queue *graphics_queue, const std::filesystem::path &config_path, bool is_vr) :
 	_swapchain(swapchain),
 	_device(swapchain->get_device()),
@@ -4965,44 +5001,6 @@ template <> void reshade::runtime::set_uniform_value<uint32_t>(uniform &variable
 	{
 		set_uniform_value_data(variable, reinterpret_cast<const uint8_t *>(values), count * sizeof(uint32_t), array_index);
 	}
-}
-
-static std::string setup_macros(const std::string &input, std::vector<std::pair<std::string, std::string>> macros, std::chrono::system_clock::time_point now)
-{
-	const auto now_seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
-	char timestamp[21];
-	const std::time_t t = std::chrono::system_clock::to_time_t(now_seconds);
-	struct tm tm; localtime_s(&tm, &t);
-
-	std::snprintf(timestamp, std::size(timestamp), "%.4d-%.2d-%.2d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
-	macros.emplace_back("Date", timestamp);
-	std::snprintf(timestamp, std::size(timestamp), "%.4d", tm.tm_year + 1900);
-	macros.emplace_back("DateYear", timestamp);
-	macros.emplace_back("Year", timestamp);
-	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_mon + 1);
-	macros.emplace_back("DateMonth", timestamp);
-	macros.emplace_back("Month", timestamp);
-	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_mday);
-	macros.emplace_back("DateDay", timestamp);
-	macros.emplace_back("Day", timestamp);
-
-	std::snprintf(timestamp, std::size(timestamp), "%.2d-%.2d-%.2d", tm.tm_hour, tm.tm_min, tm.tm_sec);
-	macros.emplace_back("Time", timestamp);
-	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_hour);
-	macros.emplace_back("TimeHour", timestamp);
-	macros.emplace_back("Hour", timestamp);
-	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_min);
-	macros.emplace_back("TimeMinute", timestamp);
-	macros.emplace_back("Minute", timestamp);
-	std::snprintf(timestamp, std::size(timestamp), "%.2d", tm.tm_sec);
-	macros.emplace_back("TimeSecond", timestamp);
-	macros.emplace_back("Second", timestamp);
-	std::snprintf(timestamp, std::size(timestamp), "%.3lld", std::chrono::duration_cast<std::chrono::milliseconds>(now - now_seconds).count());
-	macros.emplace_back("TimeMillisecond", timestamp);
-	macros.emplace_back("Millisecond", timestamp);
-	macros.emplace_back("TimeMS", timestamp);
-	
-	return expand_macro_string(input, macros);
 }
 
 void reshade::runtime::save_screenshot(const std::string_view postfix)

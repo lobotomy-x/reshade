@@ -12,6 +12,8 @@
 #include <algorithm> // std::find, std::max, std::min, std::replace std::transform
 
 extern std::filesystem::path g_reshade_base_path;
+extern int resolve_macros(ImGuiInputTextCallbackData *data);
+	
 
 static bool is_activate_key_pressed()
 {
@@ -42,7 +44,7 @@ bool reshade::imgui::path_list(const char *label, std::vector<std::filesystem::p
 			buf[buf_len] = '\0';
 
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - (button_spacing + button_size));
-			if (ImGui::InputText("##path", buf, sizeof(buf)))
+			if (ImGui::InputText("##path", buf, sizeof(buf), ImGuiInputTextFlags_CallbackCompletion, &resolve_macros))
 			{
 				res = true;
 				paths[i] = std::filesystem::u8path(buf);
@@ -116,7 +118,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 		buf[buf_len] = '\0';
 
 		ImGui::SetNextItemWidth(width);
-		if (ImGui::InputText("##path", buf, sizeof(buf)))
+		if (ImGui::InputText("##path", buf, sizeof(buf), ImGuiInputTextFlags_CallbackCompletion, &resolve_macros))
 		{
 			path = std::filesystem::u8path(buf);
 			if ((path.has_stem() && std::filesystem::is_directory(path, ec)) || (path.has_root_name() && path == path.root_name()))
@@ -217,7 +219,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 		buf[buf_len] = '\0';
 
 		ImGui::SetNextItemWidth(std::max(0.0f, width - (2 * (button_spacing + button_size))));
-		if (ImGui::InputText("##name", buf, sizeof(buf)))
+		if (ImGui::InputText("##name", buf, sizeof(buf),ImGuiInputTextFlags_CallbackCompletion, &resolve_macros))
 			path = path.parent_path() / buf;
 	}
 
@@ -353,7 +355,7 @@ bool reshade::imgui::file_input_box(const char *name, const char *hint, std::fil
 	buf[buf_len] = '\0'; // Null-terminate string
 
 	ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - (button_spacing + button_size));
-	if (ImGui::InputTextWithHint("##path", hint, buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue))
+	if (ImGui::InputTextWithHint("##path", hint, buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue| ImGuiInputTextFlags_CallbackCompletion, &resolve_macros))
 	{
 		dialog_path = std::filesystem::u8path(buf);
 		// Convert path extension to lowercase before parsing
@@ -402,7 +404,7 @@ bool reshade::imgui::directory_input_box(const char *name, std::filesystem::path
 	buf[buf_len] = '\0'; // Null-terminate string
 
 	ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - (button_spacing + button_size));
-	if (ImGui::InputText("##path", buf, sizeof(buf)))
+	if (ImGui::InputText("##path", buf, sizeof(buf), ImGuiInputTextFlags_CallbackCompletion, &resolve_macros))
 		path = std::filesystem::u8path(buf), res = true;
 
 	ImGui::SameLine(0, button_spacing);

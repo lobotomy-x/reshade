@@ -51,6 +51,8 @@ void reshade::input::register_window_with_raw_input(window_handle window, bool n
 std::shared_ptr<reshade::input> reshade::input::register_window(window_handle window)
 {
 	assert(window != nullptr);
+	
+
 
 	DWORD process_id = 0;
 	GetWindowThreadProcessId(static_cast<HWND>(window), &process_id);

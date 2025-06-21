@@ -19,8 +19,8 @@
 static vr::VROverlayHandle_t s_vr_overlay_handle = vr::k_ulOverlayHandleInvalid;
 static vr::VROverlayHandle_t s_vr_thumbnail_handle = vr::k_ulOverlayHandleInvalid;
 
-constexpr uint32_t VR_OVERLAY_WIDTH = 500;
-constexpr uint32_t VR_OVERLAY_HEIGHT = 500;
+constexpr uint32_t VR_OVERLAY_WIDTH = 1000;
+constexpr uint32_t VR_OVERLAY_HEIGHT = 1000;
 
 bool reshade::runtime::init_gui_vr()
 {

@@ -2,7 +2,7 @@
  * Copyright (C) 2024 Patrick Mours
  * SPDX-License-Identifier: BSD-3-Clause
  */
-
+#include <Windows.h>
 #include "runtime.hpp"
 #include "runtime_manager.hpp"
 #include "ini_file.hpp"
@@ -10,14 +10,32 @@
 #include <shared_mutex>
 #include <unordered_set>
 
+
 static std::shared_mutex s_runtime_config_names_mutex;
 static std::unordered_set<std::string> s_runtime_config_names;
 
 void reshade::create_effect_runtime(api::swapchain *swapchain, api::command_queue *graphics_queue, bool vr)
 {
+
 	if (graphics_queue == nullptr || swapchain->get_private_data<reshade::runtime>() != nullptr)
 		return;
-
+	// This should help with issues related to dummy swapchain creation
+	// Maybe there's an earlier place to do it, also not sure how low to go
+	RECT rect;
+	GetWindowRect(static_cast<HWND>(swapchain->get_hwnd()), &rect);
+	if ( rect.right < 128 || rect.bottom < 128)
+	{
+		return;
+	}
+	static std::vector<std::string> filtered_names = { "UE4SS", "UEVR" };
+	global_config().get("INSTALL","FilteredWindows", filtered_names);
+	
+	char winName[128];
+	GetWindowTextA(static_cast<HWND>(swapchain->get_hwnd()), winName, 0);
+	std::string window_name = winName;
+	for (auto filter : filtered_names) {
+		if (window_name.find(filter) != std::string::npos) return;
+	}	
 	assert((graphics_queue->get_type() & api::command_queue_type::graphics) != 0);
 
 	// Try to find a unique configuration name for this effect runtime instance

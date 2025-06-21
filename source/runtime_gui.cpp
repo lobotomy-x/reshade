@@ -26,15 +26,18 @@
 #include <algorithm> // std::any_of, std::count_if, std::find, std::find_if, std::max, std::min, std::replace, std::rotate, std::search, std::swap, std::transform
 
 extern bool resolve_path(std::filesystem::path &path, std::error_code &ec);
+extern std::string expand_macro_string(const std::string &input, std::vector<std::pair<std::string, std::string>> macros = {});
+extern std::string setup_macros(const std::string &input, std::vector<std::pair<std::string, std::string>> macros, std::chrono::system_clock::time_point now);
 
 static bool string_contains(const std::string_view text, const std::string_view filter)
 {
 	return filter.empty() ||
 		std::search(text.cbegin(), text.cend(), filter.cbegin(), filter.cend(),
 			[](const char c1, const char c2) { // Search case-insensitive
-				return (('a' <= c1 && c1 <= 'z') ? static_cast<char>(c1 - ' ') : c1) == (('a' <= c2 && c2 <= 'z') ? static_cast<char>(c2 - ' ') : c2);
+					return (('a' <= c1 && c1 <= 'z') ? static_cast<char>(c1 - ' ') : c1) == (('a' <= c2 && c2 <= 'z') ? static_cast<char>(c2 - ' ') : c2);
 			}) != text.cend();
 }
+
 static auto is_invalid_path_element(ImGuiInputTextCallbackData *data) -> int
 {
 	return data->EventChar == L'\"' || data->EventChar == L'*' || data->EventChar == L':' || data->EventChar == L'<' || data->EventChar == L'>' || data->EventChar == L'?' || data->EventChar == L'|';
@@ -43,6 +46,42 @@ static auto is_invalid_filename_element(ImGuiInputTextCallbackData *data) -> int
 {
 	// A file name cannot contain any of the following characters
 	return is_invalid_path_element(data) || data->EventChar == L'/' || data->EventChar == L'\\';
+}
+static auto is_macro_filename_element(ImGuiInputTextCallbackData *data) -> int
+{
+	// A file name cannot contain any of the following characters
+	return is_invalid_path_element(data) || data->EventChar == L'/' || data->EventChar == L'\\';
+}
+
+int resolve_macros(ImGuiInputTextCallbackData *data)
+{
+	std::string text = data->Buf;
+	std::string resolved = expand_macro_string(text, { { "AppName", g_target_executable_path.stem().u8string() } });
+	std::filesystem::path resolved_path = std::filesystem::u8path(resolved);
+	// adjust cursor pos
+	auto cursor_pos = data->CursorPos;
+	cursor_pos += resolved.length() - text.length();
+	// This will allow paths to resolve if the macro is correct but the user has typed a nonexistent file or folder after it
+	// This only works if the error occurs later in the path than the correct macro and does not indicate the error visually
+	// But it does move the cursor position to the last real path
+	// If the user is typing in the main menu page and opens the popup it will not correct to the partial path
+	while (!std::filesystem::exists(resolved_path) && !resolved_path.empty() && resolved_path.u8string().find_last_of("\\") != std::string::npos)
+	{
+		resolved_path = std::filesystem::path(resolved_path.u8string().substr(0, resolved_path.u8string().find_last_of("\\")));
+	}
+	if (!std::filesystem::exists(resolved_path)) return 1;
+	if (resolved_path.u8string() != resolved) {
+		resolved = resolved_path.u8string() + resolved.substr(resolved_path.u8string().length());
+	cursor_pos = resolved_path.u8string().length() + 1;
+	}
+
+
+	// Update the buffer with sanitized text
+	data->CursorPos = cursor_pos;
+	strcpy(data->Buf, resolved.c_str());
+	data->BufTextLen = resolved.length();
+	data->BufDirty = true;
+	return 0;
 }
 
 template <typename F>
@@ -93,6 +132,8 @@ static std::string_view get_localized_annotation(T &object, const std::string_vi
 
 	return object.annotation_as_string(ann_name);
 }
+
+
 
 static const ImVec4 COLOR_RED = ImColor(240, 100, 100);
 static const ImVec4 COLOR_YELLOW = ImColor(204, 204, 0);
@@ -539,8 +580,37 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 
 void reshade::runtime::load_custom_style()
 {
-	const ini_file &config = ini_file::load_cache(_config_path);
-
+	// Perhaps this needs to be more fleshed out before acceptance but imo this alone is fine
+	// If a new style config is present that will be preferred, but old behavior is preserved
+	// The idea is that now preset authors could share gui themes to go alongside their effect setups
+	// without overwriting a user's configs. New GUI option is not needed, rather we autoload any style configs
+	// and add them to the index as new custom advanced styles
+	std::vector<std::string> style_configs;
+	std::error_code ec;
+	//const auto _prev_style_index = _style_index;
+	//const auto _prev_editor_style_index = _editor_style_index;
+	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(_config_path.parent_path(), std::filesystem::directory_options::skip_permission_denied, ec))
+		[& ec, &style_configs](const std::filesystem::directory_entry &entry) {
+			if (!entry.is_directory(ec) &&
+				entry.path().extension() == ".ini" && string_contains(entry.path().filename().u8string().c_str(), "ReShadeStyle"))
+				style_configs.emplace_back(entry.path().filename().u8string().c_str());
+			};
+	// I guess we don't actually need to care about the index as long as each one is unique which has to be the case for files
+	// And I'm pretty sure the above algorithm should traverse files in a sorted manner anyway but I guess we'll see
+	//for (auto style_config : style_configs) {
+	//	auto index = 2; //offset so that ReShadeStyle1 refers to index 3
+	//	// Parse out long ints without needing to handle exceptions, starting after ReShadeStyle
+	//	index += std::strtol(style_config.substr(12).c_str(),0, 10); // 0 is a throwaway here but since it points to next nonnumber char it could be used to allow naming
+	//	if (index == 2) continue; //no int was found
+	//	style_config += ".ini";
+	//	const std::filesystem::path style_config_path = _config_path.parent_path() / style_config;
+	//	style_configs.erase(style_configs.begin());
+	//	style_configs.
+	//}
+	
+	const ini_file &config = ini_file::load_cache(_style_index > 4 &&
+		std::filesystem::exists(style_configs.at(_style_index - 4)) ? style_configs.at(_style_index - 4) : _config_path);
+	
 	ImVec4 *const colors = _imgui_context->Style.Colors;
 	switch (_style_index)
 	{
@@ -598,7 +668,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.392157f, 0.588235f, 0.941176f, 1.00f);
 		colors[ImGuiCol_TextSelectedBg] = ImVec4(0.392157f, 0.588235f, 0.941176f, 0.43f);
 		break;
-	case 5:
+	case 3:
 		colors[ImGuiCol_Text] = ImColor(0xff969483);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xff756e58);
 		colors[ImGuiCol_WindowBg] = ImColor(0xff362b00);
@@ -652,7 +722,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_NavWindowingDimBg] = ImColor(0x20e3f6fd); // Customized
 		colors[ImGuiCol_ModalWindowDimBg] = ImColor(0x20e3f6fd); // Customized
 		break;
-	case 6:
+	case 4:
 		colors[ImGuiCol_Text] = ImColor(0xff837b65);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xffa1a193);
 		colors[ImGuiCol_WindowBg] = ImColor(0xffe3f6fd);
@@ -814,20 +884,23 @@ void reshade::runtime::load_custom_style()
 }
 void reshade::runtime::save_custom_style() const
 {
-	ini_file &config = ini_file::load_cache(_config_path);
+	static std::string style_name = "ReShadeStyle" + _style_index - 4;
+	style_name += ".ini";
+	const std::filesystem::path style_config = _config_path.parent_path() / style_name;
+	ini_file &config = ini_file::load_cache(style_config);
 
-	if (_style_index == 3 || _style_index == 4) // Custom Simple, Custom Advanced
+	if (_style_index >= 5) // Custom Simple, Custom Advanced
 	{
 		for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)
 			config.set("STYLE", ImGui::GetStyleColorName(i), (const float(&)[4])_imgui_context->Style.Colors[i]);
 	}
 
-	if (_editor_style_index == 2) // Custom
+	if (_editor_style_index >= 2) // Custom
 	{
 		ImVec4 value;
 		for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
 			value = ImGui::ColorConvertU32ToFloat4(_editor_palette[i]),
-			config.set("STYLE",  imgui::code_editor::get_palette_color_name(i), (const float(&)[4])value);
+			config.set("STYLE", imgui::code_editor::get_palette_color_name(i), (const float(&)[4])value);
 	}
 }
 
@@ -2210,7 +2283,7 @@ void reshade::runtime::draw_gui_settings()
 				"  %%TimeMS%%          Milliseconds fraction of current time\n"
 				"  %%Count%%           Number of screenshots taken this session\n"),
 				g_target_executable_path.stem().u8string().c_str(),
-				_current_preset_path.stem().u8string().c_str(),
+				expand_macro_string(_current_preset_path.stem().u8string().c_str(), {{ "PresetName", _current_preset_path.stem().u8string() }}),
 				"yyyy-MM-dd",
 				"HH-mm-ss");
 		}
@@ -2250,10 +2323,17 @@ void reshade::runtime::draw_gui_settings()
 			modified = true;
 			_screenshot_post_save_command_arguments = arguments;
 		}
-
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 		{
+			
 			const std::string extension = _screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg";
+			std::string screenshot_name = setup_macros(_screenshot_name, { // this preserves all timedate-based macros while limiting their usage to screenshots 
+		{ "AppName", g_target_executable_path.stem().u8string() },
+		{ "PresetName", _current_preset_path.stem().u8string() },
+		{ "BeforeAfter", "After"},
+		{ "Count", std::to_string(_screenshot_count) }
+	}, _current_time);
+			std::string screenshot_path = _last_screenshot_file.parent_path().u8string().c_str();
 
 			ImGui::SetTooltip(_(
 				"Macros you can add that are resolved during command execution:\n"
@@ -2276,14 +2356,14 @@ void reshade::runtime::draw_gui_settings()
 				"  %%TargetName%%      File name without extension of the screenshot file (%s)\n"
 				"  %%Count%%           Number of screenshots taken this session\n"),
 				g_target_executable_path.stem().u8string().c_str(),
-				_current_preset_path.stem().u8string().c_str(),
+				expand_macro_string(_current_preset_path.stem().u8string().c_str(), {{ "PresetName", _current_preset_path.stem().u8string()}}),
 				"yyyy-MM-dd",
 				"HH-mm-ss",
-				(_screenshot_path / (_screenshot_name + extension)).u8string().c_str(),
-				_screenshot_path.u8string().c_str(),
-				(_screenshot_name + extension).c_str(),
+				(std::filesystem::path(screenshot_path) / (screenshot_name + extension)).u8string().c_str(),
+				screenshot_path,
+				(screenshot_name + extension).c_str(),
 				extension.c_str(),
-				_screenshot_name.c_str());
+				screenshot_name.c_str());
 		}
 
 		modified |= imgui::directory_input_box(_("Post-save command working directory"), _screenshot_post_save_command_working_directory, _file_selection_path);
@@ -3373,9 +3453,64 @@ void reshade::runtime::draw_gui_addons()
 	ImGui::TextLinkOpenURL(_("Open developer documentation"), "https://reshade.me/docs");
 }
 #endif
+std::vector<std::string> available_pp_vars = {
+		"RESHADE_DEPTH_LINEARIZATION_FAR_PLANE","RESHADE_DEPTH_INPUT_IS_MIRRORED","RESHADE_DEPTH_INPUT_IS_LOGARITHMIC",
+		"RESHADE_DEPTH_MULTIPLIER", "RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN", "RESHADE_DEPTH_INPUT_IS_REVERSED"   
+	//"RESHADE_DEPTH_INPUT_X_OFFSET", "RESHADE_DEPTH_INPUT_Y_OFFSET", "RESHADE_DEPTH_INPUT_Y_SCALE", "RESHADE_DEPTH_INPUT_X_SCALE", "RESHADE_DEPTH_INPUT_Y_PIXEL_OFFSET", "RESHADE_DEPTH_INPUT_X_PIXEL_OFFSET"
+};
+auto erase_to_underscore(ImGuiInputTextCallbackData *data)
+{
+	if (ImGui::IsKeyPressed(ImGuiKey_LeftCtrl) && ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+		std::string text = data->Buf;
+		auto it = text.find_last_of("_");
+		if (it != std::string::npos && it < text.size() - 1) {
+			text = text.erase(it+1);
+			data->BufTextLen = text.size();
+			strcpy(data->Buf, text.c_str());
+			data->BufDirty = true;
+			data->CursorPos = text.size() - 1;
+			return 0;	
+		}
+	} return 1;
+}
+
+auto autocomplete_preprocessor_vars(ImGuiInputTextCallbackData *data) {
+	std::string text = data->Buf;
+	if (text.empty())
+		text = available_pp_vars.at(available_pp_vars.size() - 1);
+	for(auto index = available_pp_vars.size() - 1; index > 0 ; index--) {
+		auto var = available_pp_vars.at(index);
+		std::transform(text.begin(), text.end(), text.begin(), toupper);
+		if(string_contains(var, text))
+		{
+			available_pp_vars.pop_back();
+			available_pp_vars.emplace(available_pp_vars.begin(), var);
+			if(var.size() > data->BufTextLen){			
+				data->BufTextLen = var.length();
+				strcpy(data->Buf, var.c_str());
+				data->BufDirty = true;
+				data->CursorPos = var.size() - 1;
+							return 0;
+			}
+			else { // Pressing tab with an exact match will rotate through to the next option
+			 data->BufTextLen = available_pp_vars.back().length();
+			 strcpy(data->Buf, available_pp_vars.back().c_str());
+			 data->BufDirty = true;
+			 data->CursorPos = 0;
+			return 0;
+			}
+		} 
+		else continue;
+	}
+	return 1; // Did not find any matches
+}
+
 
 void reshade::runtime::draw_variable_editor()
 {
+
+
+
 	ImGui::BeginDisabled(_is_in_preset_transition);
 
 	const ImVec2 popup_pos = ImGui::GetCursorScreenPos() + ImVec2(std::max(0.f, ImGui::GetContentRegionAvail().x * 0.5f - 200.0f), ImGui::GetFrameHeightWithSpacing());
@@ -3406,7 +3541,7 @@ void reshade::runtime::draw_variable_editor()
 				{ _("Global"), _global_preprocessor_definitions, global_modified },
 				{ _("Current Preset"), _preset_preprocessor_definitions[{}], preset_modified },
 			};
-
+			
 			for (const auto &type : definition_types)
 			{
 				if (ImGui::BeginTabItem(type.name.c_str()))
@@ -3417,12 +3552,30 @@ void reshade::runtime::draw_variable_editor()
 						name[it->first.copy(name, sizeof(name) - 1)] = '\0';
 						char value[256];
 						value[it->second.copy(value, sizeof(value) - 1)] = '\0';
-
+						//auto used_idx = std::find(available_pp_vars.begin(), available_pp_vars.end(), name);
+						//if (used_idx != available_pp_vars.end())
+						//{
+						//	pp_var_history.emplace_back(name);
+						//}
 						ImGui::PushID(static_cast<int>(std::distance(type.definitions.begin(), it)));
 
 						ImGui::SetNextItemWidth(content_region_width * 0.66666666f - (button_spacing));
-						type.modified |= ImGui::InputText("##name", name, sizeof(name), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter,
-							[](ImGuiInputTextCallbackData *data) -> int { return data->EventChar == '=' || (data->EventChar != '_' && !isalnum(data->EventChar)); }); // Filter out invalid characters
+	/*					const char *pp_vars[] = {
+				"RESHADE_DEPTH_INPUT_IS_REVERSED", "RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN", "RESHADE_DEPTH_INPUT_IS_MIRRORED", "RESHADE_DEPTH_INPUT_IS_LOGARITHMIC", "RESHADE_DEPTH_MULTIPLIER", "RESHADE_DEPTH_LINEARIZATION_FAR_PLANE"
+						};
+						static reshade::imgui::ComboFilterState comboState = { 0, false };*/
+
+						//static bool once = false;
+						//if (!once) {
+						//	memcpy(name, pp_vars[0], strlen(pp_vars[0]) + 1);
+						//	once = true;
+						//}
+						//type.modified |=  combo_filter("##name", name, sizeof(name), pp_vars, sizeof(pp_vars), comboState, NULL);
+
+						type.modified |= ImGui::InputText("##name", name, sizeof(name), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackEdit |
+						 ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackCompletion, 
+							[](ImGuiInputTextCallbackData *data) -> int {return data -> EventFlag == ImGuiInputTextFlags_CallbackCharFilter ? data->EventChar == '=' || (data->EventChar != '_' && !isalnum(data->EventChar)) : data->EventFlag == ImGuiInputTextFlags_CallbackEdit ? erase_to_underscore(data) : autocomplete_preprocessor_vars(data); });
+										
 
 						ImGui::SameLine(0, button_spacing);
 

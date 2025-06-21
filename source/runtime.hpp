@@ -350,6 +350,7 @@ namespace reshade
 		bool _screenshot_include_preset = false;
 #if RESHADE_GUI
 		bool _screenshot_save_gui = false;
+
 #endif
 		bool _screenshot_clear_alpha = true;
 		unsigned int _screenshot_count = 0;
