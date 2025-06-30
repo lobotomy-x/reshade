@@ -81,6 +81,7 @@
   <ItemGroup>
     <ClInclude Include="imgui\imgui.h" />
     <ClInclude Include="imgui\imgui_internal.h" />
+    <ClInclude Include="imgui\imstb_textedit.h" />
     <ClInclude Include="imgui_config.hpp" />
   </ItemGroup>
   <ItemGroup>

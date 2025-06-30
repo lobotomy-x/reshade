@@ -59,7 +59,7 @@ int resolve_macros(ImGuiInputTextCallbackData *data)
 	std::string resolved = expand_macro_string(text, { { "AppName", g_target_executable_path.stem().u8string() } });
 	std::filesystem::path resolved_path = std::filesystem::u8path(resolved);
 	// adjust cursor pos
-	auto cursor_pos = data->CursorPos;
+	int cursor_pos = data->CursorPos;
 	cursor_pos += resolved.length() - text.length();
 	// This will allow paths to resolve if the macro is correct but the user has typed a nonexistent file or folder after it
 	// This only works if the error occurs later in the path than the correct macro and does not indicate the error visually
@@ -2283,7 +2283,7 @@ void reshade::runtime::draw_gui_settings()
 				"  %%TimeMS%%          Milliseconds fraction of current time\n"
 				"  %%Count%%           Number of screenshots taken this session\n"),
 				g_target_executable_path.stem().u8string().c_str(),
-				expand_macro_string(_current_preset_path.stem().u8string().c_str(), {{ "PresetName", _current_preset_path.stem().u8string() }}),
+				_current_preset_path.stem().u8string().c_str(),
 				"yyyy-MM-dd",
 				"HH-mm-ss");
 		}
@@ -2327,7 +2327,7 @@ void reshade::runtime::draw_gui_settings()
 		{
 			
 			const std::string extension = _screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg";
-			std::string screenshot_name = setup_macros(_screenshot_name, { // this preserves all timedate-based macros while limiting their usage to screenshots 
+			std::string screenshot_name = setup_macros(_screenshot_name, { 
 		{ "AppName", g_target_executable_path.stem().u8string() },
 		{ "PresetName", _current_preset_path.stem().u8string() },
 		{ "BeforeAfter", "After"},
@@ -2356,7 +2356,7 @@ void reshade::runtime::draw_gui_settings()
 				"  %%TargetName%%      File name without extension of the screenshot file (%s)\n"
 				"  %%Count%%           Number of screenshots taken this session\n"),
 				g_target_executable_path.stem().u8string().c_str(),
-				expand_macro_string(_current_preset_path.stem().u8string().c_str(), {{ "PresetName", _current_preset_path.stem().u8string()}}),
+				_current_preset_path.stem().u8string().c_str(),
 				"yyyy-MM-dd",
 				"HH-mm-ss",
 				(std::filesystem::path(screenshot_path) / (screenshot_name + extension)).u8string().c_str(),
@@ -3453,64 +3453,47 @@ void reshade::runtime::draw_gui_addons()
 	ImGui::TextLinkOpenURL(_("Open developer documentation"), "https://reshade.me/docs");
 }
 #endif
+
+
 std::vector<std::string> available_pp_vars = {
 		"RESHADE_DEPTH_LINEARIZATION_FAR_PLANE","RESHADE_DEPTH_INPUT_IS_MIRRORED","RESHADE_DEPTH_INPUT_IS_LOGARITHMIC",
-		"RESHADE_DEPTH_MULTIPLIER", "RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN", "RESHADE_DEPTH_INPUT_IS_REVERSED"   
-	//"RESHADE_DEPTH_INPUT_X_OFFSET", "RESHADE_DEPTH_INPUT_Y_OFFSET", "RESHADE_DEPTH_INPUT_Y_SCALE", "RESHADE_DEPTH_INPUT_X_SCALE", "RESHADE_DEPTH_INPUT_Y_PIXEL_OFFSET", "RESHADE_DEPTH_INPUT_X_PIXEL_OFFSET"
+		"RESHADE_DEPTH_MULTIPLIER", "RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN", "RESHADE_DEPTH_INPUT_IS_REVERSED",
+	"RESHADE_DEPTH_INPUT_X_OFFSET", "RESHADE_DEPTH_INPUT_Y_OFFSET", "RESHADE_DEPTH_INPUT_Y_SCALE", "RESHADE_DEPTH_INPUT_X_SCALE", "RESHADE_DEPTH_INPUT_Y_PIXEL_OFFSET", "RESHADE_DEPTH_INPUT_X_PIXEL_OFFSET"
 };
-auto erase_to_underscore(ImGuiInputTextCallbackData *data)
-{
-	if (ImGui::IsKeyPressed(ImGuiKey_LeftCtrl) && ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
-		std::string text = data->Buf;
-		auto it = text.find_last_of("_");
-		if (it != std::string::npos && it < text.size() - 1) {
-			text = text.erase(it+1);
-			data->BufTextLen = text.size();
-			strcpy(data->Buf, text.c_str());
-			data->BufDirty = true;
-			data->CursorPos = text.size() - 1;
-			return 0;	
-		}
-	} return 1;
-}
 
-auto autocomplete_preprocessor_vars(ImGuiInputTextCallbackData *data) {
+int autocomplete_preprocessor_vars(ImGuiInputTextCallbackData *data)  {
 	std::string text = data->Buf;
 	if (text.empty())
 		text = available_pp_vars.at(available_pp_vars.size() - 1);
-	for(auto index = available_pp_vars.size() - 1; index > 0 ; index--) {
+	for (auto index = available_pp_vars.size() - 1; index > 0; index--) {
 		auto var = available_pp_vars.at(index);
 		std::transform(text.begin(), text.end(), text.begin(), toupper);
-		if(string_contains(var, text))
+		if (string_contains(var, text))
 		{
 			available_pp_vars.pop_back();
 			available_pp_vars.emplace(available_pp_vars.begin(), var);
-			if(var.size() > data->BufTextLen){			
+			if (var.size() > data->BufTextLen) {
 				data->BufTextLen = var.length();
 				strcpy(data->Buf, var.c_str());
 				data->BufDirty = true;
 				data->CursorPos = var.size() - 1;
-							return 0;
+				return 0;
 			}
 			else { // Pressing tab with an exact match will rotate through to the next option
-			 data->BufTextLen = available_pp_vars.back().length();
-			 strcpy(data->Buf, available_pp_vars.back().c_str());
-			 data->BufDirty = true;
-			 data->CursorPos = 0;
-			return 0;
+				data->BufTextLen = available_pp_vars.back().length();
+				strcpy(data->Buf, available_pp_vars.back().c_str());
+				data->BufDirty = true;
+				data->CursorPos = 0;
+				return 0;
 			}
-		} 
+		}
 		else continue;
 	}
 	return 1; // Did not find any matches
-}
-
+	}
 
 void reshade::runtime::draw_variable_editor()
 {
-
-
-
 	ImGui::BeginDisabled(_is_in_preset_transition);
 
 	const ImVec2 popup_pos = ImGui::GetCursorScreenPos() + ImVec2(std::max(0.f, ImGui::GetContentRegionAvail().x * 0.5f - 200.0f), ImGui::GetFrameHeightWithSpacing());
@@ -3541,7 +3524,7 @@ void reshade::runtime::draw_variable_editor()
 				{ _("Global"), _global_preprocessor_definitions, global_modified },
 				{ _("Current Preset"), _preset_preprocessor_definitions[{}], preset_modified },
 			};
-			
+
 			for (const auto &type : definition_types)
 			{
 				if (ImGui::BeginTabItem(type.name.c_str()))
@@ -3552,29 +3535,13 @@ void reshade::runtime::draw_variable_editor()
 						name[it->first.copy(name, sizeof(name) - 1)] = '\0';
 						char value[256];
 						value[it->second.copy(value, sizeof(value) - 1)] = '\0';
-						//auto used_idx = std::find(available_pp_vars.begin(), available_pp_vars.end(), name);
-						//if (used_idx != available_pp_vars.end())
-						//{
-						//	pp_var_history.emplace_back(name);
-						//}
 						ImGui::PushID(static_cast<int>(std::distance(type.definitions.begin(), it)));
 
 						ImGui::SetNextItemWidth(content_region_width * 0.66666666f - (button_spacing));
-	/*					const char *pp_vars[] = {
-				"RESHADE_DEPTH_INPUT_IS_REVERSED", "RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN", "RESHADE_DEPTH_INPUT_IS_MIRRORED", "RESHADE_DEPTH_INPUT_IS_LOGARITHMIC", "RESHADE_DEPTH_MULTIPLIER", "RESHADE_DEPTH_LINEARIZATION_FAR_PLANE"
-						};
-						static reshade::imgui::ComboFilterState comboState = { 0, false };*/
-
-						//static bool once = false;
-						//if (!once) {
-						//	memcpy(name, pp_vars[0], strlen(pp_vars[0]) + 1);
-						//	once = true;
-						//}
-						//type.modified |=  combo_filter("##name", name, sizeof(name), pp_vars, sizeof(pp_vars), comboState, NULL);
-
-						type.modified |= ImGui::InputText("##name", name, sizeof(name), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackEdit |
-						 ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackCompletion, 
-							[](ImGuiInputTextCallbackData *data) -> int {return data -> EventFlag == ImGuiInputTextFlags_CallbackCharFilter ? data->EventChar == '=' || (data->EventChar != '_' && !isalnum(data->EventChar)) : data->EventFlag == ImGuiInputTextFlags_CallbackEdit ? erase_to_underscore(data) : autocomplete_preprocessor_vars(data); });
+						type.modified |= ImGui::InputText("##name", name, sizeof(name), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter |
+							ImGuiInputTextFlags_CallbackCompletion, [](ImGuiInputTextCallbackData *data) -> int {
+								return data -> EventFlag == ImGuiInputTextFlags_CallbackCharFilter ? data->EventChar == '-' ||
+								(data->EventChar != '_' && !isalnum(data->EventChar)) : autocomplete_preprocessor_vars(data);});
 										
 
 						ImGui::SameLine(0, button_spacing);

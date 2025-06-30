@@ -128,98 +128,106 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 {
 	switch (fdwReason)
 	{
-		case DLL_PROCESS_ATTACH:
+	case DLL_PROCESS_ATTACH:
+	{
+		// Do NOT call 'DisableThreadLibraryCalls', since we are linking against the static CRT, which requires the thread notifications to work properly
+		// It does not do anything when static TLS is used anyway, which is the case (see https://docs.microsoft.com/windows/win32/api/libloaderapi/nf-libloaderapi-disablethreadlibrarycalls)
+		g_module_handle = hModule;
+		g_reshade_dll_path = get_module_path(hModule);
+		g_target_executable_path = get_module_path(nullptr);
+
+		const std::filesystem::path module_name = g_reshade_dll_path.stem();
+
+		const bool is_d3d = _wcsnicmp(module_name.c_str(), L"d3d", 3) == 0;
+		const bool is_dxgi = _wcsicmp(module_name.c_str(), L"dxgi") == 0;
+		const bool is_opengl = _wcsicmp(module_name.c_str(), L"opengl32") == 0;
+		const bool is_dinput = _wcsnicmp(module_name.c_str(), L"dinput", 6) == 0;
+		const bool is_asi = g_reshade_dll_path.extension() == L".asi";
+		const bool is_reshade = _wcsnicmp(module_name.c_str(), L"reshade", 7) == 0;
+		const bool is_inject = (g_reshade_dll_path.parent_path() != "C:\\ProgramData\\ReShade" && is_reshade) ||
+			(std::filesystem::exists(g_reshade_dll_path.parent_path() / "ReShade.ini") && g_reshade_dll_path.parent_path() != g_target_executable_path);
+		// UWP apps do not have write access to the application directory, so never default the base path to it for them
+		const bool default_base_to_target_executable_path = !is_d3d && !is_dxgi && !is_opengl && !is_dinput && !is_asi && !is_uwp_app();
+
+		g_reshade_base_path = get_base_path(default_base_to_target_executable_path);
+
+		const ini_file &config = reshade::global_config();
+
+		// When ReShade is not loaded by proxy, only actually load when a configuration file exists for the target executable
+		// This e.g. prevents loading the implicit Vulkan layer when not explicitly enabled for an application
+		if (default_base_to_target_executable_path && !GetEnvironmentVariableW(L"RESHADE_DISABLE_LOADING_CHECK", nullptr, 0))
 		{
-			// Do NOT call 'DisableThreadLibraryCalls', since we are linking against the static CRT, which requires the thread notifications to work properly
-			// It does not do anything when static TLS is used anyway, which is the case (see https://docs.microsoft.com/windows/win32/api/libloaderapi/nf-libloaderapi-disablethreadlibrarycalls)
-			g_module_handle = hModule;
-			g_reshade_dll_path = get_module_path(hModule);
-			g_target_executable_path = get_module_path(nullptr);
-
-			const std::filesystem::path module_name = g_reshade_dll_path.stem();
-
-			const bool is_d3d = _wcsnicmp(module_name.c_str(), L"d3d", 3) == 0;
-			const bool is_dxgi = _wcsicmp(module_name.c_str(), L"dxgi") == 0;
-			const bool is_opengl = _wcsicmp(module_name.c_str(), L"opengl32") == 0;
-			const bool is_dinput = _wcsnicmp(module_name.c_str(), L"dinput", 6) == 0;
-			const bool is_asi = g_reshade_dll_path.extension() == L".asi";
-
-			// UWP apps do not have write access to the application directory, so never default the base path to it for them
-			const bool default_base_to_target_executable_path = !is_d3d && !is_dxgi && !is_opengl && !is_dinput && !is_asi && !is_uwp_app();
-
-			g_reshade_base_path = get_base_path(default_base_to_target_executable_path);
-
-			const ini_file &config = reshade::global_config();
-
-			// When ReShade is not loaded by proxy, only actually load when a configuration file exists for the target executable
-			// This e.g. prevents loading the implicit Vulkan layer when not explicitly enabled for an application
-			if (default_base_to_target_executable_path && !GetEnvironmentVariableW(L"RESHADE_DISABLE_LOADING_CHECK", nullptr, 0))
+			std::error_code ec;
+			if (!std::filesystem::exists(config.path(), ec))
 			{
-				std::error_code ec;
-				if (!std::filesystem::exists(config.path(), ec))
-				{
 #ifndef NDEBUG
-					// Log was not yet opened at this point, so this only writes to debug output
-					reshade::log::message(reshade::log::level::warning, "ReShade was not enabled for '%s'! Aborting initialization ...", g_target_executable_path.u8string().c_str());
+				// Log was not yet opened at this point, so this only writes to debug output
+				reshade::log::message(reshade::log::level::warning, "ReShade was not enabled for '%s'! Aborting initialization ...", g_target_executable_path.u8string().c_str());
 #endif
+				return FALSE; // Make the 'LoadLibrary' call that loaded this instance fail
+			}
+		}
+
+		if (config.get("INSTALL", "Logging") || (!config.has("INSTALL", "Logging") && !GetEnvironmentVariableW(L"RESHADE_DISABLE_LOGGING", nullptr, 0)))
+		{
+			std::filesystem::path log_path = config.path();
+			log_path.replace_extension(L".log");
+
+			std::error_code ec;
+			if (!reshade::log::open_log_file(log_path, ec))
+			{
+				// Try a different file if the default failed to open (e.g. because currently in use by another ReShade instance)
+				for (int log_index = 0; log_index < 10 && std::filesystem::exists(log_path, ec); ++log_index)
+				{
+					log_path.replace_extension(L".log" + std::to_wstring(log_index + 1));
+
+					if (reshade::log::open_log_file(log_path, ec))
+						break;
+				}
+
+#ifndef NDEBUG
+				if (ec)
+					reshade::log::message(reshade::log::level::error, "Opening the ReShade log file failed with error code %d.", ec.value());
+#endif
+			}
+		}
+
+		reshade::log::message(reshade::log::level::info,
+			"Initializing crosire's ReShade version '" VERSION_STRING_FILE "' "
+#ifndef _WIN64
+			"(32-bit) "
+#else
+			"(64-bit) "
+#endif
+			"loaded from '%s' into '%s' (0x%X) ...",
+			g_reshade_dll_path.u8string().c_str(),
+#ifndef NDEBUG
+			static_cast<const char *>(GetCommandLineA()),
+#else
+			// Do not log full command-line in release builds, since it may contain sensitive information like authentication tokens
+			g_target_executable_path.u8string().c_str(),
+#endif
+			static_cast<unsigned int>(std::hash<std::string>()(g_target_executable_path.stem().u8string()) & 0xFFFFFFFF));
+
+		// Check if another ReShade instance was already loaded into the process
+		if (HMODULE modules[1024]; K32EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &fdwReason)) // Use kernel32 variant which is available in DllMain
+		{
+			for (DWORD i = 0; i < std::min<DWORD>(fdwReason / sizeof(HMODULE), ARRAYSIZE(modules)); ++i)
+			{
+				if (modules[i] != hModule && GetProcAddress(modules[i], "ReShadeVersion") != nullptr)
+				{
+					WCHAR buf[4096];
+					GetModuleFileNameW(modules[i], buf, ARRAYSIZE(buf));
+
+					reshade::log::message(reshade::log::level::warning, "Another ReShade instance was already loaded from '%s'! Aborting initialization ...", get_module_path(modules[i]).u8string().c_str());
 					return FALSE; // Make the 'LoadLibrary' call that loaded this instance fail
 				}
 			}
-
-			if (config.get("INSTALL", "Logging") || (!config.has("INSTALL", "Logging") && !GetEnvironmentVariableW(L"RESHADE_DISABLE_LOGGING", nullptr, 0)))
-			{
-				std::filesystem::path log_path = config.path();
-				log_path.replace_extension(L".log");
-
-				std::error_code ec;
-				if (!reshade::log::open_log_file(log_path, ec))
-				{
-					// Try a different file if the default failed to open (e.g. because currently in use by another ReShade instance)
-					for (int log_index = 0; log_index < 10 && std::filesystem::exists(log_path, ec); ++log_index)
-					{
-						log_path.replace_extension(L".log" + std::to_wstring(log_index + 1));
-
-						if (reshade::log::open_log_file(log_path, ec))
-							break;
-					}
-
-#ifndef NDEBUG
-					if (ec)
-						reshade::log::message(reshade::log::level::error, "Opening the ReShade log file failed with error code %d.", ec.value());
-#endif
-				}
-			}
-
-			reshade::log::message(reshade::log::level::info,
-				"Initializing crosire's ReShade version '" VERSION_STRING_FILE "' "
-#ifndef _WIN64
-				"(32-bit) "
-#else
-				"(64-bit) "
-#endif
-				"loaded from '%s' into '%s' (0x%X) ...",
-				g_reshade_dll_path.u8string().c_str(),
-#ifndef NDEBUG
-				static_cast<const char *>(GetCommandLineA()),
-#else
-				// Do not log full command-line in release builds, since it may contain sensitive information like authentication tokens
-				g_target_executable_path.u8string().c_str(),
-#endif
-				static_cast<unsigned int>(std::hash<std::string>()(g_target_executable_path.stem().u8string()) & 0xFFFFFFFF));
-
-			// Check if another ReShade instance was already loaded into the process
-			if (HMODULE modules[1024]; K32EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &fdwReason)) // Use kernel32 variant which is available in DllMain
-			{
-				for (DWORD i = 0; i < std::min<DWORD>(fdwReason / sizeof(HMODULE), ARRAYSIZE(modules)); ++i)
-				{
-					if (modules[i] != hModule && GetProcAddress(modules[i], "ReShadeVersion") != nullptr)
-					{
-						reshade::log::message(reshade::log::level::warning, "Another ReShade instance was already loaded from '%s'! Aborting initialization ...", get_module_path(modules[i]).u8string().c_str());
-						return FALSE; // Make the 'LoadLibrary' call that loaded this instance fail
-					}
-				}
-			}
-
+		}
+		if (config.get("INSTALL", "DisableOpenXR") && GetModuleHandleW(L"openxr_loader.dll") != NULL && g_reshade_dll_path.parent_path() == L"C:\\ProgramData\\ReShade")
+		{
+			return FALSE; // Enable temp disable in config so addons can disable the hook 
+		}
 #ifndef NDEBUG
 			if (config.get("INSTALL", "DumpExceptions"))
 			{
@@ -281,7 +289,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 			// Register modules to hook
 			{
-				if (!GetEnvironmentVariableW(L"RESHADE_DISABLE_INPUT_HOOK", nullptr, 0))
+				// again this is mainly to allow addons to 
+				if (!GetEnvironmentVariableW(L"RESHADE_DISABLE_INPUT_HOOK", nullptr, 0) && !(config.get("INPUT", "DisableInputHook")))
 				{
 					g_exit_event = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 

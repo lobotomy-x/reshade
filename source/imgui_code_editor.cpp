@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2017 BalazsJako
  * Copyright (C) 2018 Patrick Mours
  * SPDX-License-Identifier: MIT
@@ -168,14 +168,18 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 				move_lines_down();
 			else
 				move_down(1, shift);
+		else if (!alt && !ctrl && ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+			move_left(1, shift, 0);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
-			move_left(1, shift, ctrl);
-		else if (alt && ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
-			move_left_to_boundary(shift);
+			move_left(1, shift, 1);
+		else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+			move_left(1, shift, 2);
+		else if (!alt && !ctrl && ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+			move_right(1, shift, 0);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_RightArrow))
-			move_right(1, shift, ctrl);
-		else if (alt && ImGui::IsKeyPressed(ImGuiKey_RightArrow))
-			move_right_to_boundary(shift);
+			move_right(1, shift, 1);
+		else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+			move_right(1, shift, 2);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageUp))
 			move_up(static_cast<size_t>(floor((ImGui::GetWindowHeight() - 20.0f) / char_advance.y) - 4.0f), shift);
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageDown))
@@ -209,6 +213,8 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 			clipboard_cut();
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_A))
 			select_all();
+		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_Slash))
+			toggle_comment(shift);
 		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Enter))
 			insert_character('\n', true);
 		else
@@ -960,7 +966,105 @@ void reshade::imgui::code_editor::insert_character(uint32_t c, bool auto_indent)
 
 	_colorize_line_end = std::max(_colorize_line_end, _cursor_pos.line + 10 + 1);
 }
+void reshade::imgui::code_editor::toggle_comment(bool shift)
+{
+	if (_readonly)
+		return;
 
+	// Determine the range of lines to process
+	size_t start_line = _cursor_pos.line;
+	size_t end_line = _cursor_pos.line;
+
+	if (has_selection() && _select_beg.line != _select_end.line)
+	{
+		start_line = std::min(_select_beg.line, _select_end.line);
+		end_line = std::max(_select_beg.line, _select_end.line);
+	}
+
+	// Check if the first line is empty
+	if (_lines[start_line].empty())
+		return;
+
+	undo_record u;
+
+	// Find the first non-whitespace character in the first line
+	size_t first_non_ws = 0;
+	const std::vector<glyph> &first_line = _lines[start_line];
+	while (first_non_ws < first_line.size() && std::isspace(first_line[first_non_ws].c))
+		++first_non_ws;
+
+	// Determine if the first line starts with "//" after whitespace
+	bool is_commented = false;
+	if (first_non_ws + 1 < first_line.size() &&
+		first_line[first_non_ws].c == '/' &&
+		first_line[first_non_ws + 1].c == '/')
+	{
+		is_commented = true;
+	}
+
+	// Process each line
+	for (size_t line_idx = start_line; line_idx <= end_line; ++line_idx)
+	{
+		std::vector<glyph> &line = _lines[line_idx];
+		if (line.empty())
+			continue;
+
+		// Find the first non-whitespace character
+		size_t non_ws = 0;
+		while (non_ws < line.size() && std::isspace(line[non_ws].c))
+			++non_ws;
+
+		if (is_commented)
+		{
+			// Remove "//" if present after whitespace
+			if (non_ws + 1 < line.size() &&
+				line[non_ws].c == '/' &&
+				line[non_ws + 1].c == '/')
+			{
+				u.removed_beg = text_pos(line_idx, non_ws);
+				u.removed_end = text_pos(line_idx, non_ws + 2);
+				u.removed = "//";
+
+				line.erase(line.begin() + non_ws, line.begin() + non_ws + 2);
+
+				// Adjust cursor and selection if necessary
+				if (_cursor_pos.line == line_idx && _cursor_pos.column > non_ws)
+					_cursor_pos.column = std::max(non_ws, _cursor_pos.column - 2);
+				if (_select_beg.line == line_idx && _select_beg.column > non_ws)
+					_select_beg.column = std::max(non_ws, _select_beg.column - 2);
+				if (_select_end.line == line_idx && _select_end.column > non_ws)
+					_select_end.column = std::max(non_ws, _select_end.column - 2);
+			}
+		}
+		else
+		{
+			// Add "//" at the first non-whitespace position
+			u.added_beg = text_pos(line_idx, non_ws);
+			line.insert(line.begin() + non_ws, { '/', color_comment });
+			line.insert(line.begin() + non_ws + 1, { '/', color_comment });
+			u.added_end = text_pos(line_idx, non_ws + 2);
+			u.added = "//";
+
+			// Adjust cursor and selection if necessary
+			if (_cursor_pos.line == line_idx && _cursor_pos.column >= non_ws)
+				_cursor_pos.column += 2;
+			if (_select_beg.line == line_idx && _select_beg.column >= non_ws)
+				_select_beg.column += 2;
+			if (_select_end.line == line_idx && _select_end.column >= non_ws)
+				_select_end.column += 2;
+		}
+	}
+
+	// Record a single undo event for the entire operation
+	if (!u.added.empty() || !u.removed.empty())
+	{
+		record_undo(std::move(u));
+	}
+
+	// Trigger syntax highlighting update
+	_colorize_line_beg = std::min(_colorize_line_beg, start_line);
+	_colorize_line_end = std::max(_colorize_line_end, end_line + 1);
+}
 std::string reshade::imgui::code_editor::get_text() const
 {
 	return get_text(0, _lines.size());
@@ -1403,7 +1507,7 @@ void reshade::imgui::code_editor::move_down(size_t amount, bool selection)
 	select(_interactive_beg, _interactive_end);
 	_scroll_to_cursor = true;
 }
-void reshade::imgui::code_editor::move_left(size_t amount, bool selection, bool word_mode)
+void reshade::imgui::code_editor::move_left(size_t amount, bool selection, int word_mode)
 {
 	assert(!_lines.empty());
 
@@ -1427,16 +1531,20 @@ void reshade::imgui::code_editor::move_left(size_t amount, bool selection, bool 
 				_cursor_pos.line--;
 				_cursor_pos.column = _lines[_cursor_pos.line].size();
 			}
-			else if (word_mode)
+			else if (word_mode > 0)
 			{
 				for (const color word_color = _lines[_cursor_pos.line][_cursor_pos.column - 1].col; _cursor_pos.column > 0; --_cursor_pos.column)
 					if (_lines[_cursor_pos.line][_cursor_pos.column - 1].col != word_color)
 						break;
+					else if (word_mode == 2 && _cursor_pos.column > 2)
+					{
+						char ch = get_text(text_pos(_cursor_pos.line, _cursor_pos.column - 1), text_pos(_cursor_pos.line, _cursor_pos.column))[0];
+						if (ch == '-' || ch == '_')
+							break;
+					}
 			}
-			else
-			{
+			if (_cursor_pos.column > 1)
 				_cursor_pos.column--;
-			}
 		}
 
 		if (selection)
@@ -1459,37 +1567,9 @@ void reshade::imgui::code_editor::move_left(size_t amount, bool selection, bool 
 	select(_interactive_beg, _interactive_end);
 	_scroll_to_cursor = true;
 }
-void reshade::imgui::code_editor::move_left_to_boundary(bool selection)
-{
-	assert(!_lines.empty());
 
-	const text_pos prev_pos = _cursor_pos;
 
-	// Clear selection if not holding shift 
-	if (!selection && has_selection())
-		select(_cursor_pos, _cursor_pos);
-	size_t amount = 1;
-	if (_cursor_pos.column > 1) 
-	{
-		std::string text = get_text(text_pos(_cursor_pos.line, 0), text_pos(_cursor_pos.line, _cursor_pos.column));
-		int i = _cursor_pos.column;
-		char c = text[i];
-		while (c != '-' && c != '_' && c != ' ') {
-			int i = _cursor_pos.column--;
-			char c = text[i];
-		}
-		//auto last = std::max(text.find_last_of('_', _cursor_pos.column), text.find_last_of('-', _cursor_pos.column));
-		//if (last > 1 && text[_cursor_pos.column - 1] != ' ') {
-		//	if (text[_cursor_pos.column - 1] == '-' || text[_cursor_pos.column - 1] == '_')
-		//		amount = 1;
-		//	else
-		//		amount = _cursor_pos.column - last;
-		//}
-	}
-	move_left(amount, selection, false);
-}
-
-void reshade::imgui::code_editor::move_right(size_t amount, bool selection, bool word_mode)
+void reshade::imgui::code_editor::move_right(size_t amount, bool selection, int word_mode)
 {
 	assert(!_lines.empty());
 
@@ -1507,18 +1587,24 @@ void reshade::imgui::code_editor::move_right(size_t amount, bool selection, bool
 			_cursor_pos.line++;
 			_cursor_pos.column = 0;
 		}
-		else if (word_mode)
+		else if (word_mode >= 1)
 		{
 			for (const color word_color = _lines[_cursor_pos.line][_cursor_pos.column].col; _cursor_pos.column < _lines[_cursor_pos.line].size(); ++_cursor_pos.column)
 				if (_lines[_cursor_pos.line][_cursor_pos.column].col != word_color)
 					break;
+				else if (word_mode == 2 && _cursor_pos.column < (line.size() - 2))
+				{
+					char ch = get_text(_cursor_pos, text_pos(_cursor_pos.line, _cursor_pos.column+1))[0];
+					if (ch == '-' || ch == '_')
+						break;
+				}
 		}
-		else
-		{
-			_cursor_pos.column++;
-		}
-	}
 
+			if ( _cursor_pos.column <  line.size())
+				_cursor_pos.column++;
+		
+		
+	}
 	if (selection)
 	{
 		if (prev_pos == _interactive_end)
@@ -1526,8 +1612,11 @@ void reshade::imgui::code_editor::move_right(size_t amount, bool selection, bool
 		else if (prev_pos == _interactive_beg)
 			_interactive_beg = _cursor_pos;
 		else
-			_interactive_beg = prev_pos,
-			_interactive_end = _cursor_pos;
+		{
+			_interactive_beg = prev_pos;
+			
+		}
+		_interactive_end = _cursor_pos;
 	}
 	else
 	{
@@ -1537,33 +1626,8 @@ void reshade::imgui::code_editor::move_right(size_t amount, bool selection, bool
 	select(_interactive_beg, _interactive_end);
 	_scroll_to_cursor = true;
 }
-void reshade::imgui::code_editor::move_right_to_boundary(bool selection)
-{
-	assert(!_lines.empty());
 
-	const text_pos prev_pos = _cursor_pos;
 
-	// Clear selection if not holding shift but continue the remaining operation
-	if (!selection && has_selection())
-		select(_cursor_pos, _cursor_pos);
-	size_t amount = 1;
-	std::string text = get_text(text_pos(_cursor_pos.line,_cursor_pos.column), text_pos(_cursor_pos.line, _lines[_cursor_pos.line].size() - 1));
-	if (_cursor_pos.column < text.size() - 2 && text[_cursor_pos.column] != ' ')
-	{
-		auto next = std::min(text.find_first_of('_', _cursor_pos.column), text.find_first_of('_', _cursor_pos.column));
-		if (next < text.size() - 1) {
-			if (text[_cursor_pos.column] == '-' || text[_cursor_pos.column] == '_')
-			{
-				amount = 1;
-			}
-			else
-			{
-				amount = next - _cursor_pos.column;
-			}
-		}
-	}
-	move_right(amount, selection, false);
-}
 void reshade::imgui::code_editor::move_top(bool selection)
 {
 	assert(!_lines.empty());

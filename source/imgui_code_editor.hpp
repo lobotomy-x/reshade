@@ -140,6 +140,10 @@ namespace reshade::imgui
 		std::string get_selected_text() const;
 
 		/// <summary>
+		/// Toggles comments. 
+		/// </summary>
+		void toggle_comment(bool shift);
+		/// <summary>
 		/// Reverts the last action(s) performed on this text editor.
 		/// </summary>
 		/// <param name="steps">Number of actions to undo.</param>
@@ -229,10 +233,8 @@ namespace reshade::imgui
 
 		void move_up(size_t amount = 1, bool select = false);
 		void move_down(size_t amount = 1, bool select = false);
-		void move_left(size_t amount = 1, bool select = false, bool word_mode = false);
-		void move_left_to_boundary(bool select = false);
-		void move_right(size_t amount = 1, bool select = false, bool word_mode = false);
-		void move_right_to_boundary(bool select = false);
+		void move_left(size_t amount = 1, bool select = false, int word_mode = 0);
+		void move_right(size_t amount = 1, bool select = false, int word_mode = 0);
 		void move_top(bool select = false);
 		void move_bottom(bool select = false);
 		void move_home(bool select = false);
