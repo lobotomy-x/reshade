@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: BSD-3-Clause OR MIT
  */
 
+#include "dxgi_factory.hpp"
 #include "dxgi_swapchain.hpp"
 #include "d3d10/d3d10_device.hpp"
 #include "d3d11/d3d11_device.hpp"
@@ -372,11 +373,17 @@ static void init_swapchain_proxy(T *&swapchain, reshade::api::device_api direct3
 
 HRESULT STDMETHODCALLTYPE IDXGIFactory_CreateSwapChain(IDXGIFactory *pFactory, IUnknown *pDevice, DXGI_SWAP_CHAIN_DESC *pDesc, IDXGISwapChain **ppSwapChain)
 {
+	// Separate function to the actual implementation, so that a third party hooking this function does not also affect the call from 'DXGIFactory::CreateSwapChain'
+
 	const auto trampoline = reshade::hooks::call(IDXGIFactory_CreateSwapChain, reshade::hooks::vtable_from_instance(pFactory) + 10);
 
 	if (g_in_dxgi_runtime)
 		return trampoline(pFactory, pDevice, pDesc, ppSwapChain);
 
+	return IDXGIFactory_CreateSwapChain_Impl(pFactory, pDevice, pDesc, ppSwapChain, trampoline);
+}
+HRESULT STDMETHODCALLTYPE IDXGIFactory_CreateSwapChain_Impl(IDXGIFactory *pFactory, IUnknown *pDevice, DXGI_SWAP_CHAIN_DESC *pDesc, IDXGISwapChain **ppSwapChain, decltype(&IDXGIFactory_CreateSwapChain) trampoline)
+{
 	reshade::log::message(
 		reshade::log::level::info,
 		"Redirecting IDXGIFactory::CreateSwapChain(this = %p, pDevice = %p, pDesc = %p, ppSwapChain = %p) ...",
@@ -393,7 +400,9 @@ HRESULT STDMETHODCALLTYPE IDXGIFactory_CreateSwapChain(IDXGIFactory *pFactory, I
 	const bool modified = dump_and_modify_swapchain_desc(direct3d_version, desc, sync_interval);
 
 	g_in_dxgi_runtime = true;
-	const HRESULT hr = trampoline(pFactory, pDevice, &desc, ppSwapChain);
+	const HRESULT hr = (trampoline != nullptr) ?
+		trampoline(pFactory, pDevice, &desc, ppSwapChain) :
+		pFactory->CreateSwapChain(pDevice, &desc, ppSwapChain);
 	g_in_dxgi_runtime = false;
 	if (FAILED(hr))
 	{
@@ -416,6 +425,10 @@ HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForHwnd(IDXGIFactory2 *pF
 	if (g_in_dxgi_runtime)
 		return trampoline(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc, pRestrictToOutput, ppSwapChain);
 
+	return IDXGIFactory2_CreateSwapChainForHwnd_Impl(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc, pRestrictToOutput, ppSwapChain, trampoline);
+}
+HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForHwnd_Impl(IDXGIFactory2 *pFactory, IUnknown *pDevice, HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc, const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc, IDXGIOutput *pRestrictToOutput, IDXGISwapChain1 **ppSwapChain, decltype(&IDXGIFactory2_CreateSwapChainForHwnd) trampoline)
+{
 	reshade::log::message(
 		reshade::log::level::info,
 		"Redirecting IDXGIFactory2::CreateSwapChainForHwnd(this = %p, pDevice = %p, hWnd = %p, pDesc = %p, pFullscreenDesc = %p, pRestrictToOutput = %p, ppSwapChain = ) ...",
@@ -441,7 +454,9 @@ HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForHwnd(IDXGIFactory2 *pF
 		desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 
 	g_in_dxgi_runtime = true;
-	const HRESULT hr = trampoline(pFactory, pDevice, hWnd, &desc, fullscreen_desc.Windowed ? nullptr : &fullscreen_desc, pRestrictToOutput, ppSwapChain);
+	const HRESULT hr = (trampoline != nullptr) ?
+		trampoline(pFactory, pDevice, hWnd, &desc, fullscreen_desc.Windowed ? nullptr : &fullscreen_desc, pRestrictToOutput, ppSwapChain) :
+		pFactory->CreateSwapChainForHwnd(pDevice, hWnd, &desc, fullscreen_desc.Windowed ? nullptr : &fullscreen_desc, pRestrictToOutput, ppSwapChain);
 	g_in_dxgi_runtime = false;
 	if (FAILED(hr))
 	{
@@ -470,6 +485,10 @@ HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForCoreWindow(IDXGIFactor
 	if (g_in_dxgi_runtime)
 		return trampoline(pFactory, pDevice, pWindow, pDesc, pRestrictToOutput, ppSwapChain);
 
+	return IDXGIFactory2_CreateSwapChainForCoreWindow_Impl(pFactory, pDevice, pWindow, pDesc, pRestrictToOutput, ppSwapChain, trampoline);
+}
+HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForCoreWindow_Impl(IDXGIFactory2 *pFactory, IUnknown *pDevice, IUnknown *pWindow, const DXGI_SWAP_CHAIN_DESC1 *pDesc, IDXGIOutput *pRestrictToOutput, IDXGISwapChain1 **ppSwapChain, decltype(&IDXGIFactory2_CreateSwapChainForCoreWindow) trampoline)
+{
 	reshade::log::message(
 		reshade::log::level::info,
 		"Redirecting IDXGIFactory2::CreateSwapChainForCoreWindow(this = %p, pDevice = %p, pWindow = %p, pDesc = %p, pRestrictToOutput = %p, ppSwapChain = ) ...",
@@ -487,7 +506,9 @@ HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForCoreWindow(IDXGIFactor
 	const bool modified = dump_and_modify_swapchain_desc(direct3d_version, desc, sync_interval);
 
 	g_in_dxgi_runtime = true;
-	const HRESULT hr = trampoline(pFactory, pDevice, pWindow, &desc, pRestrictToOutput, ppSwapChain);
+	const HRESULT hr = (trampoline != nullptr) ?
+		trampoline(pFactory, pDevice, pWindow, &desc, pRestrictToOutput, ppSwapChain) :
+		pFactory->CreateSwapChainForCoreWindow(pDevice, pWindow, &desc, pRestrictToOutput, ppSwapChain);
 	g_in_dxgi_runtime = false;
 	if (FAILED(hr))
 	{
@@ -516,6 +537,10 @@ HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForComposition(IDXGIFacto
 	if (g_in_dxgi_runtime)
 		return trampoline(pFactory, pDevice, pDesc, pRestrictToOutput, ppSwapChain);
 
+	return IDXGIFactory2_CreateSwapChainForComposition_Impl(pFactory, pDevice, pDesc, pRestrictToOutput, ppSwapChain, trampoline);
+}
+HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForComposition_Impl(IDXGIFactory2 *pFactory, IUnknown *pDevice, const DXGI_SWAP_CHAIN_DESC1 *pDesc, IDXGIOutput *pRestrictToOutput, IDXGISwapChain1 **ppSwapChain, decltype(&IDXGIFactory2_CreateSwapChainForComposition) trampoline)
+{
 	reshade::log::message(
 		reshade::log::level::info,
 		"Redirecting IDXGIFactory2::CreateSwapChainForComposition(this = %p, pDevice = %p, pDesc = %p, pRestrictToOutput = %p, ppSwapChain = ) ...",
@@ -533,7 +558,9 @@ HRESULT STDMETHODCALLTYPE IDXGIFactory2_CreateSwapChainForComposition(IDXGIFacto
 	const bool modified = dump_and_modify_swapchain_desc(direct3d_version, desc, sync_interval);
 
 	g_in_dxgi_runtime = true;
-	const HRESULT hr = trampoline(pFactory, pDevice, &desc, pRestrictToOutput, ppSwapChain);
+	const HRESULT hr = (trampoline != nullptr) ?
+		trampoline(pFactory, pDevice, &desc, pRestrictToOutput, ppSwapChain) :
+		pFactory->CreateSwapChainForComposition(pDevice, &desc, pRestrictToOutput, ppSwapChain);
 	g_in_dxgi_runtime = false;
 	if (FAILED(hr))
 	{
@@ -568,8 +595,6 @@ extern "C" HRESULT WINAPI CreateDXGIFactory(REFIID riid, void **ppFactory)
 }
 extern "C" HRESULT WINAPI CreateDXGIFactory1(REFIID riid, void **ppFactory)
 {
-	// Do NOT skip in case this is called internally for D3D10/D3D11 (otherwise the 'IDXGIFactory::CreateSwapChain' call in 'D3D10/11CreateDeviceAndSwapChain' will not be redirected)
-
 	reshade::log::message(reshade::log::level::info, "Redirecting CreateDXGIFactory1(riid = %s, ppFactory = %p) ...", reshade::log::iid_to_string(riid).c_str(), ppFactory);
 
 	const HRESULT hr = reshade::hooks::call(CreateDXGIFactory1)(riid, ppFactory);
@@ -579,22 +604,49 @@ extern "C" HRESULT WINAPI CreateDXGIFactory1(REFIID riid, void **ppFactory)
 		return hr;
 	}
 
-	IDXGIFactory *const factory = static_cast<IDXGIFactory *>(*ppFactory);
+	// The returned factory should alway implement the 'IDXGIFactory' base interface
+	const auto factory = static_cast<IDXGIFactory *>(*ppFactory);
 
-	reshade::hooks::install("IDXGIFactory::CreateSwapChain", reshade::hooks::vtable_from_instance(factory), 10, reinterpret_cast<reshade::hook::address>(&IDXGIFactory_CreateSwapChain));
-
-	// Check for DXGI 1.2 support and install IDXGIFactory2 hooks if it exists
-	if (com_ptr<IDXGIFactory2> factory2;
-		SUCCEEDED(factory->QueryInterface(&factory2)))
+	if (g_in_dxgi_runtime)
 	{
-		reshade::hooks::install("IDXGIFactory2::CreateSwapChainForHwnd", reshade::hooks::vtable_from_instance(factory2.get()), 15, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForHwnd));
-		reshade::hooks::install("IDXGIFactory2::CreateSwapChainForCoreWindow", reshade::hooks::vtable_from_instance(factory2.get()), 16, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForCoreWindow));
-		reshade::hooks::install("IDXGIFactory2::CreateSwapChainForComposition", reshade::hooks::vtable_from_instance(factory2.get()), 24, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForComposition));
-	}
+		reshade::hooks::install("IDXGIFactory::CreateSwapChain", reshade::hooks::vtable_from_instance(factory), 10, reinterpret_cast<reshade::hook::address>(&IDXGIFactory_CreateSwapChain));
+
+		// Check for DXGI 1.2 support and install 'IDXGIFactory2' hooks if it exists
+		if (com_ptr<IDXGIFactory2> factory2;
+			SUCCEEDED(factory->QueryInterface(&factory2)))
+		{
+			reshade::hooks::install("IDXGIFactory2::CreateSwapChainForHwnd", reshade::hooks::vtable_from_instance(factory2.get()), 15, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForHwnd));
+			reshade::hooks::install("IDXGIFactory2::CreateSwapChainForCoreWindow", reshade::hooks::vtable_from_instance(factory2.get()), 16, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForCoreWindow));
+			reshade::hooks::install("IDXGIFactory2::CreateSwapChainForComposition", reshade::hooks::vtable_from_instance(factory2.get()), 24, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForComposition));
+		}
 
 #if RESHADE_VERBOSE_LOG
-	reshade::log::message(reshade::log::level::debug, "Returning IDXGIFactory object %p.", factory);
+		reshade::log::message(reshade::log::level::debug, "Returning IDXGIFactory object %p.", factory);
 #endif
+	}
+	else
+	{
+		const auto factory_proxy = new DXGIFactory(factory);
+
+		// Upgrade to the actual interface version requested here
+		if (factory_proxy->check_and_upgrade_interface(riid))
+		{
+#if RESHADE_VERBOSE_LOG
+			reshade::log::message(
+				reshade::log::level::debug,
+				"Returning IDXGIFactory%hu object %p (%p).",
+				factory_proxy->_interface_version, factory_proxy, factory_proxy->_orig);
+#endif
+			*ppFactory = factory_proxy;
+		}
+		else // Do not hook object if we do not support the requested interface
+		{
+			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in CreateDXGIFactory1.", reshade::log::iid_to_string(riid).c_str());
+
+			delete factory_proxy; // Delete instead of release to keep reference count untouched
+		}
+	}
+
 	return hr;
 }
 extern "C" HRESULT WINAPI CreateDXGIFactory2(UINT Flags, REFIID riid, void **ppFactory)
@@ -640,7 +692,7 @@ extern "C" HRESULT WINAPI CreateDXGIFactory2(UINT Flags, REFIID riid, void **ppF
 		__uuidof(IDXGIFactory7),
 	};
 	HRESULT hr = E_NOINTERFACE;
-	if (std::find(std::begin(iid_lookup), std::end(iid_lookup), riid) == std::end(iid_lookup))
+	if (std::find(std::begin(iid_lookup), std::end(iid_lookup), riid) == std::end(iid_lookup) || !g_in_dxgi_runtime)
 	{
 		hr = trampoline(Flags, riid, ppFactory); // Fall back in case of unknown interface version
 	}
@@ -657,21 +709,51 @@ extern "C" HRESULT WINAPI CreateDXGIFactory2(UINT Flags, REFIID riid, void **ppF
 		return hr;
 	}
 
-	IDXGIFactory *const factory = static_cast<IDXGIFactory *>(*ppFactory);
+	// The returned factory should alway implement the 'IDXGIFactory' base interface
+	const auto factory = static_cast<IDXGIFactory *>(*ppFactory);
 
-	reshade::hooks::install("IDXGIFactory::CreateSwapChain", reshade::hooks::vtable_from_instance(factory), 10, reinterpret_cast<reshade::hook::address>(&IDXGIFactory_CreateSwapChain));
-
-	if (com_ptr<IDXGIFactory2> factory2;
-		SUCCEEDED(factory->QueryInterface(&factory2)))
+	// Install vtable hooks in case this is called internally for D3D10/D3D11, so that applications querying the factory from a D3D10/11 device still get their swap chain creation call redirected
+	// It may happen that some other third party (like NVIDIA Smooth Motion) hooks functions in the vtable hooks too though, so prefer proxy otherwise, to ensure ReShade gets called first
+	if (g_in_dxgi_runtime)
 	{
-		reshade::hooks::install("IDXGIFactory2::CreateSwapChainForHwnd", reshade::hooks::vtable_from_instance(factory2.get()), 15, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForHwnd));
-		reshade::hooks::install("IDXGIFactory2::CreateSwapChainForCoreWindow", reshade::hooks::vtable_from_instance(factory2.get()), 16, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForCoreWindow));
-		reshade::hooks::install("IDXGIFactory2::CreateSwapChainForComposition", reshade::hooks::vtable_from_instance(factory2.get()), 24, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForComposition));
-	}
+		reshade::hooks::install("IDXGIFactory::CreateSwapChain", reshade::hooks::vtable_from_instance(factory), 10, reinterpret_cast<reshade::hook::address>(&IDXGIFactory_CreateSwapChain));
+
+		// Check for DXGI 1.2 support and install 'IDXGIFactory2' hooks if it exists
+		if (com_ptr<IDXGIFactory2> factory2;
+			SUCCEEDED(factory->QueryInterface(&factory2)))
+		{
+			reshade::hooks::install("IDXGIFactory2::CreateSwapChainForHwnd", reshade::hooks::vtable_from_instance(factory2.get()), 15, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForHwnd));
+			reshade::hooks::install("IDXGIFactory2::CreateSwapChainForCoreWindow", reshade::hooks::vtable_from_instance(factory2.get()), 16, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForCoreWindow));
+			reshade::hooks::install("IDXGIFactory2::CreateSwapChainForComposition", reshade::hooks::vtable_from_instance(factory2.get()), 24, reinterpret_cast<reshade::hook::address>(&IDXGIFactory2_CreateSwapChainForComposition));
+		}
 
 #if RESHADE_VERBOSE_LOG
-	reshade::log::message(reshade::log::level::debug, "Returning IDXGIFactory object %p.", factory);
+		reshade::log::message(reshade::log::level::debug, "Returning IDXGIFactory object %p.", factory);
 #endif
+	}
+	else
+	{
+		const auto factory_proxy = new DXGIFactory(factory);
+
+		// Upgrade to the actual interface version requested here
+		if (factory_proxy->check_and_upgrade_interface(riid))
+		{
+#if RESHADE_VERBOSE_LOG
+			reshade::log::message(
+				reshade::log::level::debug,
+				"Returning IDXGIFactory%hu object %p (%p).",
+				factory_proxy->_interface_version, factory_proxy, factory_proxy->_orig);
+#endif
+			*ppFactory = factory_proxy;
+		}
+		else // Do not hook object if we do not support the requested interface
+		{
+			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in CreateDXGIFactory2.", reshade::log::iid_to_string(riid).c_str());
+
+			delete factory_proxy; // Delete instead of release to keep reference count untouched
+		}
+	}
+
 	return hr;
 }
 

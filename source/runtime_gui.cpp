@@ -580,37 +580,43 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 
 void reshade::runtime::load_custom_style()
 {
-	// Perhaps this needs to be more fleshed out before acceptance but imo this alone is fine
-	// If a new style config is present that will be preferred, but old behavior is preserved
-	// The idea is that now preset authors could share gui themes to go alongside their effect setups
-	// without overwriting a user's configs. New GUI option is not needed, rather we autoload any style configs
-	// and add them to the index as new custom advanced styles
-	std::vector<std::string> style_configs;
-	std::error_code ec;
-	//const auto _prev_style_index = _style_index;
-	//const auto _prev_editor_style_index = _editor_style_index;
-	for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(_config_path.parent_path(), std::filesystem::directory_options::skip_permission_denied, ec))
-		[& ec, &style_configs](const std::filesystem::directory_entry &entry) {
-			if (!entry.is_directory(ec) &&
-				entry.path().extension() == ".ini" && string_contains(entry.path().filename().u8string().c_str(), "ReShadeStyle"))
-				style_configs.emplace_back(entry.path().filename().u8string().c_str());
-			};
-	// I guess we don't actually need to care about the index as long as each one is unique which has to be the case for files
-	// And I'm pretty sure the above algorithm should traverse files in a sorted manner anyway but I guess we'll see
-	//for (auto style_config : style_configs) {
-	//	auto index = 2; //offset so that ReShadeStyle1 refers to index 3
-	//	// Parse out long ints without needing to handle exceptions, starting after ReShadeStyle
-	//	index += std::strtol(style_config.substr(12).c_str(),0, 10); // 0 is a throwaway here but since it points to next nonnumber char it could be used to allow naming
-	//	if (index == 2) continue; //no int was found
-	//	style_config += ".ini";
-	//	const std::filesystem::path style_config_path = _config_path.parent_path() / style_config;
-	//	style_configs.erase(style_configs.begin());
-	//	style_configs.
-	//}
+	//// Perhaps this needs to be more fleshed out before acceptance but imo this alone is fine
+	//// If a new style config is present that will be preferred, but old behavior is preserved
+	//// The idea is that now preset authors could share gui themes to go alongside their effect setups
+	//// without overwriting a user's configs. New GUI option is not needed, rather we autoload any style configs
+	//// and add them to the index as new custom advanced styles
+	//std::vector<std::string> style_configs;
+	//std::error_code ec;
+	////const auto _prev_style_index = _style_index;
+	////const auto _prev_editor_style_index = _editor_style_index;
+	//for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(_config_path.parent_path(), std::filesystem::directory_options::skip_permission_denied, ec))
+	//	[& ec, &style_configs](const std::filesystem::directory_entry &entry) {
+	//		if (!entry.is_directory(ec) &&
+	//			entry.path().extension() == ".ini" && string_contains(entry.path().filename().u8string().c_str(), "ReShadeStyle"))
+	//			style_configs.emplace_back(entry.path().filename().u8string().c_str());
+	//		};
+	//// I guess we don't actually need to care about the index as long as each one is unique which has to be the case for files
+	//// And I'm pretty sure the above algorithm should traverse files in a sorted manner anyway but I guess we'll see
+	////for (auto style_config : style_configs) {
+	////	auto index = 2; //offset so that ReShadeStyle1 refers to index 3
+	////	// Parse out long ints without needing to handle exceptions, starting after ReShadeStyle
+	////	index += std::strtol(style_config.substr(12).c_str(),0, 10); // 0 is a throwaway here but since it points to next nonnumber char it could be used to allow naming
+	////	if (index == 2) continue; //no int was found
+	////	style_config += ".ini";
+	////	const std::filesystem::path style_config_path = _config_path.parent_path() / style_config;
+	////	style_configs.erase(style_configs.begin());
+	////	style_configs.
+	////}
+	//
+	//const ini_file &config = ini_file::load_cache(_style_index > 4 &&
+	//	std::filesystem::exists(style_configs.at(_style_index - 4)) ? style_configs.at(_style_index - 4) : _config_path);
 	
-	const ini_file &config = ini_file::load_cache(_style_index > 4 &&
-		std::filesystem::exists(style_configs.at(_style_index - 4)) ? style_configs.at(_style_index - 4) : _config_path);
+	std::filesystem::path style_cfg = _config_path.parent_path() / L"ReShadeStyle.ini";
 	
+	const ini_file &config = std::filesystem::exists(style_cfg) ? ini_file::load_cache(style_cfg) : ini_file::load_cache(_config_path);
+
+
+
 	ImVec4 *const colors = _imgui_context->Style.Colors;
 	switch (_style_index)
 	{
@@ -777,8 +783,16 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_ModalWindowDimBg] = ImColor(0x20362b00); // Customized
 		break;
 	default:
-		for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)
-			config.get("STYLE", ImGui::GetStyleColorName(i), (float(&)[4])colors[i]);
+		int _custom_style_index = 0;
+		std::string style_name = "STYLE" + std::to_string(_style_index);
+		if (config.has(style_name,"CustomStyle")) {
+			for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)
+				config.get(style_name, ImGui::GetStyleColorName(i), (float(&)[4])colors[i]);
+		}
+		else {
+			for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)
+				config.get("STYLE", ImGui::GetStyleColorName(i), (float(&)[4])colors[i]);
+		}
 		break;
 	}
 
@@ -828,7 +842,7 @@ void reshade::runtime::load_custom_style()
 		_editor_palette[imgui::code_editor::color_current_line_fill_inactive] = 0x40808080;
 		_editor_palette[imgui::code_editor::color_current_line_edge] = 0x40000000;
 		break;
-	case 3: // Solarized Dark
+	case 2: // Solarized Dark
 		_editor_palette[imgui::code_editor::color_default] = 0xff969483;
 		_editor_palette[imgui::code_editor::color_keyword] = 0xff0089b5;
 		_editor_palette[imgui::code_editor::color_number_literal] = 0xff98a12a;
@@ -850,7 +864,7 @@ void reshade::runtime::load_custom_style()
 		_editor_palette[imgui::code_editor::color_current_line_fill_inactive] = 0x7f423607;
 		_editor_palette[imgui::code_editor::color_current_line_edge] = 0x7f423607;
 		break;
-	case 4: // Solarized Light
+	case 3: // Solarized Light
 		_editor_palette[imgui::code_editor::color_default] = 0xff837b65;
 		_editor_palette[imgui::code_editor::color_keyword] = 0xff0089b5;
 		_editor_palette[imgui::code_editor::color_number_literal] = 0xff98a12a;
@@ -872,35 +886,51 @@ void reshade::runtime::load_custom_style()
 		_editor_palette[imgui::code_editor::color_current_line_fill_inactive] = 0x7fd5e8ee;
 		_editor_palette[imgui::code_editor::color_current_line_edge] = 0x7fd5e8ee;
 		break;
-	case 2:
+	case 4:
 	default:
-		ImVec4 value;
-		for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
-			value = ImGui::ColorConvertU32ToFloat4(_editor_palette[i]), // Get default value first
-			config.get("STYLE",  imgui::code_editor::get_palette_color_name(i), (float(&)[4])value),
-			_editor_palette[i] = ImGui::ColorConvertFloat4ToU32(value);
+		int _custom_style_index = 0;
+		std::string _editor_style_name = "EDITORSTYLE" + std::to_string(_editor_style_index);
+		if (config.has(_editor_style_name, "CustomStyle")) {
+			ImVec4 value;
+			for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
+				value = ImGui::ColorConvertU32ToFloat4(_editor_palette[i]), // Get default value first
+				config.get(_editor_style_name, imgui::code_editor::get_palette_color_name(i), (float(&)[4])value),
+				_editor_palette[i] = ImGui::ColorConvertFloat4ToU32(value);
+		}
+		else {
+			ImVec4 value;
+			for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
+				value = ImGui::ColorConvertU32ToFloat4(_editor_palette[i]), // Get default value first
+				config.get("STYLE", imgui::code_editor::get_palette_color_name(i), (float(&)[4])value),
+				_editor_palette[i] = ImGui::ColorConvertFloat4ToU32(value);
+		}
 		break;
 	}
 }
 void reshade::runtime::save_custom_style() const
 {
-	static std::string style_name = "ReShadeStyle" + _style_index - 4;
-	style_name += ".ini";
-	const std::filesystem::path style_config = _config_path.parent_path() / style_name;
+	static std::string style_name = "STYLE" + std::to_string(_style_index);
+	static std::string _editor_style_name = "EDITORSTYLE" + std::to_string(_editor_style_index);
+
+	
+	const std::filesystem::path style_config = _config_path.parent_path() / "ReShadeStyle.ini";
 	ini_file &config = ini_file::load_cache(style_config);
 
-	if (_style_index >= 5) // Custom Simple, Custom Advanced
+	if (_style_index >= 4) 
 	{
+		config.set(style_name, "CustomStyle", "1");
 		for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)
-			config.set("STYLE", ImGui::GetStyleColorName(i), (const float(&)[4])_imgui_context->Style.Colors[i]);
+			config.set(style_name, ImGui::GetStyleColorName(i), (const float(&)[4])_imgui_context->Style.Colors[i]);
 	}
 
 	if (_editor_style_index >= 2) // Custom
 	{
+		config.set(_editor_style_name, "CustomStyle", "1");
+
 		ImVec4 value;
 		for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
 			value = ImGui::ColorConvertU32ToFloat4(_editor_palette[i]),
-			config.set("STYLE", imgui::code_editor::get_palette_color_name(i), (const float(&)[4])value);
+			config.set(_editor_style_name, imgui::code_editor::get_palette_color_name(i), (const float(&)[4])value);
 	}
 }
 
@@ -2327,13 +2357,13 @@ void reshade::runtime::draw_gui_settings()
 		{
 			
 			const std::string extension = _screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg";
-			std::string screenshot_name = setup_macros(_screenshot_name, { 
-		{ "AppName", g_target_executable_path.stem().u8string() },
-		{ "PresetName", _current_preset_path.stem().u8string() },
-		{ "BeforeAfter", "After"},
-		{ "Count", std::to_string(_screenshot_count) }
-	}, _current_time);
-			std::string screenshot_path = _last_screenshot_file.parent_path().u8string().c_str();
+	//		std::string screenshot_name = setup_macros(_screenshot_name, { 
+	//	{ "AppName", g_target_executable_path.stem().u8string() },
+	//	{ "PresetName", _current_preset_path.stem().u8string() },
+	//	{ "BeforeAfter", "After"},
+	//	{ "Count", std::to_string(_screenshot_count) }
+	//}, _current_time);
+	//		std::string screenshot_path = _last_screenshot_file.parent_path().u8string().c_str();
 
 			ImGui::SetTooltip(_(
 				"Macros you can add that are resolved during command execution:\n"
@@ -2359,11 +2389,11 @@ void reshade::runtime::draw_gui_settings()
 				_current_preset_path.stem().u8string().c_str(),
 				"yyyy-MM-dd",
 				"HH-mm-ss",
-				(std::filesystem::path(screenshot_path) / (screenshot_name + extension)).u8string().c_str(),
-				screenshot_path,
-				(screenshot_name + extension).c_str(),
+				(_screenshot_path / (_screenshot_name + extension)).u8string().c_str(),
+				_screenshot_path.u8string().c_str(),
+				(_screenshot_name + extension).c_str(),
 				extension.c_str(),
-				screenshot_name.c_str());
+				_screenshot_name.c_str());
 		}
 
 		modified |= imgui::directory_input_box(_("Post-save command working directory"), _screenshot_post_save_command_working_directory, _file_selection_path);
@@ -2411,9 +2441,23 @@ void reshade::runtime::draw_gui_settings()
 			modified |= ImGui::Checkbox(_("Show \"Force load all effects\" button"), &_show_force_load_effects_button);
 
 		modified |= ImGui::Checkbox(_("Group effect files with tabs instead of a tree"), &_variable_editor_tabs);
-
+		
 		#pragma region Style
-		if (ImGui::Combo(_("Global style"), &_style_index, "Dark\0Light\0Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
+
+		std::string style_items = "Dark\0Light\0Default\0Solarized Dark\0Solarized Light\0Custom Simple\0Custom Advanced\0";
+		auto style_path = _config_path.parent_path() / "ReShadeStyle.ini";
+
+		if (std::filesystem::exists(style_path)) 
+		{
+			auto style_cfg = ini_file::load_cache(style_path);
+			int i = 4;
+			while (style_cfg.has("STYLE" + std::to_string(i), "CustomStyle")) {
+				style_items += "Custom Style" + std::to_string(i) + "\0";
+				i++;
+			}
+		}
+
+		if (ImGui::Combo(_("Global style"), &_style_index, style_items.c_str()))
 		{
 			modified = true;
 			load_custom_style();
@@ -2485,7 +2529,7 @@ void reshade::runtime::draw_gui_settings()
 				colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 			}
 		}
-		if (_style_index == 4) // Custom Advanced
+		if (_style_index >= 4) // Custom Advanced
 		{
 			if (ImGui::BeginChild("##colors", ImVec2(0, 300), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_AlwaysVerticalScrollbar))
 			{
@@ -2505,13 +2549,29 @@ void reshade::runtime::draw_gui_settings()
 		#pragma endregion
 
 		#pragma region Editor Style
-		if (ImGui::Combo(_("Text editor style"), &_editor_style_index, "Dark\0Light\0Custom\0Solarized Dark\0Solarized Light\0"))
+
+		std::string editor_style_items = "Dark\0Light\0Solarized Dark\0Solarized Light\0Custom\0";
+	
+
+		if (std::filesystem::exists(style_path))
+		{
+			auto style_cfg = ini_file::load_cache(style_path);
+			int j = 4;
+			while (style_cfg.has("EDITORSTYLE" + std::to_string(j), "CustomStyle")) {
+				editor_style_items += "Custom Style" + std::to_string(j) + "\0";
+				j++;
+			}
+		}
+	
+
+
+		if (ImGui::Combo(_("Text editor style"), &_editor_style_index, editor_style_items.c_str()))
 		{
 			modified = true;
 			load_custom_style();
 		}
 
-		if (_editor_style_index == 2)
+		if (_editor_style_index >= 4)
 		{
 			if (ImGui::BeginChild("##editor_colors", ImVec2(0, 300), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_AlwaysVerticalScrollbar))
 			{
@@ -2726,7 +2786,13 @@ void reshade::runtime::draw_gui_statistics()
 
 		ImGui::BeginGroup();
 
-		std::vector<bool> long_technique_name(_techniques.size());
+		size_t total_pass_count = 0;
+		for (const technique &tech : _techniques)
+			total_pass_count += tech.permutations[0].passes.size();
+		std::vector<bool> long_technique_name(_techniques.size() + total_pass_count);
+
+		total_pass_count = _techniques.size();
+
 		for (size_t technique_index : _technique_sorting)
 		{
 			const reshade::technique &tech = _techniques[technique_index];
@@ -2743,13 +2809,26 @@ void reshade::runtime::draw_gui_statistics()
 			if (long_technique_name[technique_index])
 				ImGui::NewLine();
 
-			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index)
-				ImGui::Text("  pass %zu", pass_index);
+			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index, ++total_pass_count)
+			{
+				const reshade::technique::pass &pass = tech.permutations[0].passes[pass_index];
+
+				if (pass.name.empty())
+					ImGui::Text("  pass %-2zu", pass_index);
+				else
+					ImGui::Text("  pass %-2zu %s", pass_index, pass.name.c_str());
+
+				long_technique_name[total_pass_count] = (ImGui::GetItemRectSize().x + 10.0f) > (ImGui::GetWindowWidth() * 0.66666666f);
+				if (long_technique_name[total_pass_count])
+					ImGui::NewLine();
+			}
 		}
 
 		ImGui::EndGroup();
 		ImGui::SameLine(ImGui::GetWindowWidth() * 0.33333333f);
 		ImGui::BeginGroup();
+
+		total_pass_count = _techniques.size();
 
 		for (size_t technique_index : _technique_sorting)
 		{
@@ -2766,13 +2845,20 @@ void reshade::runtime::draw_gui_statistics()
 			else
 				ImGui::NewLine();
 
-			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index)
+			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index, ++total_pass_count)
+			{
 				ImGui::NewLine();
+
+				if (long_technique_name[total_pass_count])
+					ImGui::NewLine();
+			}
 		}
 
 		ImGui::EndGroup();
 		ImGui::SameLine(ImGui::GetWindowWidth() * 0.66666666f);
 		ImGui::BeginGroup();
+
+		total_pass_count = _techniques.size();
 
 		for (size_t technique_index : _technique_sorting)
 		{
@@ -2790,9 +2876,12 @@ void reshade::runtime::draw_gui_statistics()
 			else
 				ImGui::NewLine();
 
-			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index)
+			for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index, ++total_pass_count)
 			{
 				const reshade::technique::pass &pass = tech.permutations[0].passes[pass_index];
+
+				if (long_technique_name[total_pass_count])
+					ImGui::NewLine();
 
 				if (_gather_gpu_statistics && pass.average_gpu_duration != 0)
 					ImGui::Text("%*.3f ms GPU", gpu_digits + 4, pass.average_gpu_duration * 1e-6f);
@@ -2851,7 +2940,7 @@ void reshade::runtime::draw_gui_statistics()
 			case reshadefx::texture_format::rg11b10f:
 				return { "RG11B10F", 4 };
 			}
-		};
+			};
 
 		const float total_width = ImGui::GetContentRegionAvail().x;
 		int texture_index = 0;
@@ -2867,7 +2956,7 @@ void reshade::runtime::draw_gui_statistics()
 		{
 			if (tex.resource == 0 || !tex.semantic.empty() ||
 				!std::any_of(tex.shared.cbegin(), tex.shared.cend(),
-					[this](size_t effect_index) { return _effects[effect_index].rendering; }))
+				[this](size_t effect_index) { return _effects[effect_index].rendering; }))
 				continue;
 
 			ImGui::PushID(texture_index);
@@ -3102,11 +3191,13 @@ void reshade::runtime::draw_gui_log()
 	std::filesystem::path log_path = global_config().path();
 	log_path.replace_extension(L".log");
 
-	const bool filter_changed = imgui::search_input_box(_log_filter, sizeof(_log_filter), -(16.0f * _font_size + 2 * _imgui_context->Style.ItemSpacing.x));
+	const bool filter_changed = imgui::search_input_box(_log_filter, sizeof(_log_filter), -(ImGui::GetFrameHeight() + 8.0f * _font_size + 2 * _imgui_context->Style.ItemSpacing.x));
 
 	ImGui::SameLine();
 
-	imgui::toggle_button(_("Word Wrap"), _log_wordwrap, 8.0f * _font_size);
+	if (ImGui::Button(ICON_FK_FOLDER, ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+		utils::open_explorer(log_path);
+	ImGui::SetItemTooltip(_("Open folder in explorer"));
 
 	ImGui::SameLine();
 
@@ -3116,57 +3207,61 @@ void reshade::runtime::draw_gui_log()
 
 	ImGui::Spacing();
 
-	if (ImGui::BeginChild("##log", ImVec2(0, -(ImGui::GetFrameHeightWithSpacing() + _imgui_context->Style.ItemSpacing.y)), ImGuiChildFlags_Borders, _log_wordwrap ? 0 : ImGuiWindowFlags_AlwaysHorizontalScrollbar))
+	const uintmax_t file_size = std::filesystem::file_size(log_path, ec);
+	if (filter_changed || _last_log_size != file_size)
 	{
-		const uintmax_t file_size = std::filesystem::file_size(log_path, ec);
-		if (filter_changed || _last_log_size != file_size)
+		_log_editor.clear_text();
+		_log_editor.set_readonly(true);
+
+		if (FILE *const file = _wfsopen(log_path.c_str(), L"r", SH_DENYNO))
 		{
-			_log_lines.clear();
+			imgui::code_editor::text_pos line_pos;
 
-			if (FILE *const file = _wfsopen(log_path.c_str(), L"r", SH_DENYNO))
+			char line_data[2048];
+			while (fgets(line_data, sizeof(line_data), file))
 			{
-				char line_data[2048];
-				while (fgets(line_data, sizeof(line_data), file))
-					if (string_contains(line_data, _log_filter))
-						_log_lines.push_back(line_data);
+				const std::string_view line(line_data);
+				if (string_contains(line, _log_filter))
+				{
+					if (line.back() != '\n')
+						continue;
 
-				fclose(file);
+					_log_editor.insert_text(line);
+
+					imgui::code_editor::color col = imgui::code_editor::color_default;
+					if (line.find("ERROR |") != std::string_view::npos)
+						col = imgui::code_editor::color_error_marker;
+					else if (line.find("WARN  |") != std::string_view::npos)
+						col = imgui::code_editor::color_warning_marker;
+					else if (line.find("DEBUG |") != std::string_view::npos)
+						col = imgui::code_editor::color_comment;
+					else if (line.find("error") != std::string_view::npos)
+						col = imgui::code_editor::color_error_marker;
+					else if (line.find("warning") != std::string_view::npos)
+						col = imgui::code_editor::color_warning_marker;
+
+					imgui::code_editor::text_pos next_line_pos = line_pos;
+					next_line_pos.line++;
+
+					_log_editor.colorize(line_pos, next_line_pos, col);
+
+					line_pos = next_line_pos;
+				}
 			}
 
-			_last_log_size = file_size;
+			fclose(file);
 		}
 
-		ImGuiListClipper clipper;
-		clipper.Begin(static_cast<int>(_log_lines.size()), ImGui::GetTextLineHeightWithSpacing());
-		while (clipper.Step())
-		{
-			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
-			{
-				ImVec4 textcol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-
-				if (_log_lines[i].find("ERROR |") != std::string::npos || _log_lines[i].find("error") != std::string::npos)
-					textcol = COLOR_RED;
-				else if (_log_lines[i].find("WARN  |") != std::string::npos || _log_lines[i].find("warning") != std::string::npos)
-					textcol = COLOR_YELLOW;
-				else if (_log_lines[i].find("DEBUG |") != std::string::npos)
-					textcol = ImColor(100, 100, 255);
-
-				if (_log_wordwrap)
-					ImGui::PushTextWrapPos();
-				ImGui::PushStyleColor(ImGuiCol_Text, textcol);
-				ImGui::TextUnformatted(_log_lines[i].c_str(), _log_lines[i].c_str() + _log_lines[i].size());
-				ImGui::PopStyleColor();
-				if (_log_wordwrap)
-					ImGui::PopTextWrapPos();
-			}
-		}
+		_last_log_size = file_size;
 	}
-	ImGui::EndChild();
 
-	ImGui::Spacing();
+	uint32_t palette[imgui::code_editor::color_palette_max];
+	std::copy_n(_editor_palette, imgui::code_editor::color_palette_max, palette);
+	palette[imgui::code_editor::color_error_marker] = ImColor(COLOR_RED);
+	palette[imgui::code_editor::color_warning_marker] = ImColor(COLOR_YELLOW);
+	palette[imgui::code_editor::color_comment] = ImColor(100, 100, 255);
 
-	if (ImGui::Button(ICON_FK_FOLDER " " + _("Open folder in explorer"), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
-		utils::open_explorer(log_path);
+	_log_editor.render("##log", palette, true);
 }
 void reshade::runtime::draw_gui_about()
 {
@@ -3529,6 +3624,9 @@ void reshade::runtime::draw_variable_editor()
 			{
 				if (ImGui::BeginTabItem(type.name.c_str()))
 				{
+					if (&type.modified == &preset_modified)
+						ImGui::BeginDisabled(!_auto_save_preset);
+
 					for (auto it = type.definitions.begin(); it != type.definitions.end();)
 					{
 						char name[128];

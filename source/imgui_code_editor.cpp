@@ -159,12 +159,12 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Y) || ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Z))
 			redo();
 		else if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-			if (alt && !shift) // Alt + Up moves the current line one up
+			if (alt && !shift && !_readonly) // Alt + Up moves the current line one up
 				move_lines_up();
 			else
 				move_up(1, shift);
 		else if (!ctrl && ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-			if (alt && !shift) // Alt + Down moves the current line one down
+			if (alt && !shift && !_readonly) // Alt + Down moves the current line one down
 				move_lines_down();
 			else
 				move_down(1, shift);
@@ -194,9 +194,9 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 				move_bottom(shift);
 			else
 				move_end(shift);
-		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Delete))
+		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Delete) && !_readonly)
 			delete_next();
-		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Backspace))
+		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Backspace) && !_readonly)
 			delete_previous();
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_Insert))
 			if (ctrl)
@@ -215,13 +215,15 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 			select_all();
 		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_Slash))
 			toggle_comment(shift);
-		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Enter))
-			insert_character('\n', true);
-		else
-			for (ImWchar c : io.InputQueueCharacters)
-				if (c != 0 && (isprint(c) || isspace(c)))
-					insert_character(static_cast<char>(c), true);
+		else if (!_readonly)
+			if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Enter))
+				insert_character('\n', true);
+			else
+				for (ImWchar c : io.InputQueueCharacters)
+					if (c != 0 && (isprint(c) || isspace(c)))
+						insert_character(static_cast<char>(c), true);
 	}
+	
 
 	// Handle mouse input
 	if (ImGui::IsWindowHovered() && !alt)
@@ -2156,4 +2158,13 @@ void reshade::imgui::code_editor::colorize()
 			_lines[line][column++].col = col;
 		}
 	}
+}
+void reshade::imgui::code_editor::colorize(const text_pos &beg, const text_pos &end, color col)
+{
+	for (size_t l = beg.line; l <= end.line && l < _lines.size(); ++l)
+		for (size_t k = (l == beg.line ? beg.column : 0); k < _lines[l].size() && (l != end.line || k < end.column); ++k)
+			_lines[l][k].col = col;
+
+	_colorize_line_beg = std::numeric_limits<size_t>::max();
+	_colorize_line_end = 0;
 }

@@ -982,13 +982,8 @@ void reshade::runtime::on_present()
 			if (was_enabled)
 				_backup_texture_semantic_bindings = _texture_semantic_bindings;
 
-			for (const auto &info : _backup_texture_semantic_bindings)
-			{
-				if (info.second.first == _effect_permutations[0].color_srv[0] && info.second.second == _effect_permutations[0].color_srv[1])
-					continue;
+			update_texture_bindings(binding.first.c_str(), addon_enabled ? binding.second.first : api::resource_view { 0 }, addon_enabled ? binding.second.second : api::resource_view { 0 });
 
-				update_texture_bindings(info.first.c_str(), addon_enabled ? info.second.first : api::resource_view { 0 }, addon_enabled ? info.second.second : api::resource_view { 0 });
-			}
 		}
 	}
 
@@ -2433,7 +2428,8 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 	if (!effect.compiled)
 		return false;
 
-	assert(!effect.created);
+	// Cannot create an effect that was not previously destroyed (ignore other permutations, since the value is already set by the default permutation)
+	assert(!effect.created || permutation_index != 0);
 
 	effect::permutation &permutation = effect.permutations[permutation_index];
 
@@ -3932,8 +3928,6 @@ void reshade::runtime::update_effects()
 
 	if (!is_loading() && !_is_in_preset_transition && !_reload_required_effects.empty())
 	{
-		save_current_preset(); // Save preset preprocessor definitions (careful to not do this during a preset transition)
-
 		_reload_remaining_effects = 0;
 
 		for (size_t i = 0; i < _reload_required_effects.size(); ++i)
