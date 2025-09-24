@@ -4,14 +4,97 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+#include <Windows.h>
 #include <imgui.h>
 #include <reshade.hpp>
 #include <list>
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstring>
+#include <cassert>
+#include <cfloat>
+#include <cstdint>
+
+static unsigned int toggle_key[4] = { 0, 0, 0, 0 };
+std::string key_name(unsigned int keycode)
+{
+	if (keycode >= 256)
+		return std::string();
+
+	if (keycode == VK_HOME &&
+		LOBYTE(GetKeyboardLayout(0)) == LANG_GERMAN)
+		return "Pos1";
+
+	static const char *keyboard_keys[256] = {
+		"", "Left Mouse", "Right Mouse", "Cancel", "Middle Mouse", "X1 Mouse", "X2 Mouse", "", "Backspace", "Tab", "", "", "Clear", "Enter", "", "",
+		"Shift", "Control", "Alt", "Pause", "Caps Lock", "", "", "", "", "", "", "Escape", "", "", "", "",
+		"Space", "Page Up", "Page Down", "End", "Home", "Left Arrow", "Up Arrow", "Right Arrow", "Down Arrow", "Select", "", "", "Print Screen", "Insert", "Delete", "Help",
+		"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "", "", "", "", "", "",
+		"", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O",
+		"P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Left Windows", "Right Windows", "Apps", "", "Sleep",
+		"Numpad 0", "Numpad 1", "Numpad 2", "Numpad 3", "Numpad 4", "Numpad 5", "Numpad 6", "Numpad 7", "Numpad 8", "Numpad 9", "Numpad *", "Numpad +", "", "Numpad -", "Numpad Decimal", "Numpad /",
+		"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14", "F15", "F16",
+		"F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24", "", "", "", "", "", "", "", "",
+		"Num Lock", "Scroll Lock", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+		"Left Shift", "Right Shift", "Left Control", "Right Control", "Left Menu", "Right Menu", "Browser Back", "Browser Forward", "Browser Refresh", "Browser Stop", "Browser Search", "Browser Favorites", "Browser Home", "Volume Mute", "Volume Down", "Volume Up",
+		"Next Track", "Previous Track", "Media Stop", "Media Play/Pause", "Mail", "Media Select", "Launch App 1", "Launch App 2", "", "", "OEM ;", "OEM +", "OEM ,", "OEM -", "OEM .", "OEM /",
+		"OEM ~", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+		"", "", "", "", "", "", "", "", "", "", "", "OEM [", "OEM \\", "OEM ]", "OEM '", "OEM 8",
+		"", "", "OEM <", "", "", "", "", "", "", "", "", "", "", "", "", "",
+		"", "", "", "", "", "", "Attn", "CrSel", "ExSel", "Erase EOF", "Play", "Zoom", "", "PA1", "OEM Clear", ""
+	};
+
+	return keyboard_keys[keycode];
+}
+std::string key_name(const unsigned int key[4])
+{
+	assert(key[0] != VK_CONTROL && key[0] != VK_SHIFT && key[0] != VK_MENU);
+
+	return (key[1] ? "Ctrl + " : std::string()) + (key[2] ? "Shift + " : std::string()) + (key[3] ? "Alt + " : std::string()) + key_name(key[0]);
+}
+
+bool key_input_box(const char *name, unsigned int key[4], const reshade::api::effect_runtime *runtime)
+{
+	bool res = false;
+
+	char buf[48]; buf[0] = '\0';
+	if (key[0] || key[1] || key[2] || key[3])
+		buf[key_name(key).copy(buf, sizeof(buf) - 1)] = '\0';
+
+	// Correct parameter order: label, hint, buffer, buffer_size, flags
+	ImGui::InputTextWithHint(name, "Click to set keyboard shortcut", buf, sizeof(buf), ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoUndoRedo | ImGuiInputTextFlags_NoHorizontalScroll);
+
+	if (ImGui::IsItemActive())
+	{
+		const unsigned int last_key_pressed = runtime->last_key_pressed();
+		if (last_key_pressed != 0)
+		{
+			if (last_key_pressed == 0x08) // Backspace
+			{
+				key[0] = 0;
+				key[1] = 0;
+				key[2] = 0;
+				key[3] = 0;
+			}
+			else if (last_key_pressed < 0x10 || last_key_pressed > 0x12) // Exclude modifier keys
+			{
+				key[0] = last_key_pressed;
+			}
+
+			res = true;
+		}
+	}
+	else if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+	{
+		ImGui::SetTooltip("Click in the field and press any key to change the shortcut to that key or press backspace to remove the shortcut.");
+	}
+
+	return res;
+}
 
 constexpr size_t HISTORY_LIMIT = 1000;
+static bool draw_window = true;
 
 struct history
 {
@@ -48,9 +131,23 @@ struct __declspec(uuid("ee32daa4-6b5c-47e6-9409-f87cca0e5797")) history_context
 	std::list<history> histories;
 };
 
+
+void set_toggle_key(const unsigned int key[4]) {
+	for (int i = 0; i < 4; ++i) toggle_key[i] = key[i];
+}
+
+
+
 static void on_init(reshade::api::effect_runtime *runtime)
 {
 	runtime->create_private_data<history_context>();
+	int temp{};
+
+	if (reshade::get_config_value(nullptr, "history_window", "toggle_key", temp))
+	{
+		toggle_key[0] = temp & 0xFF;
+	}
+
 }
 static void on_destroy(reshade::api::effect_runtime *runtime)
 {
@@ -363,6 +460,38 @@ static void draw_history_window(reshade::api::effect_runtime *runtime)
 		}
 	}
 }
+static void osd_draw(reshade::api::effect_runtime *runtime) {
+	ImGui::Text("Also drawing to OSD");
+	if (toggle_key[0] != 0 && runtime->is_key_released(toggle_key[0]))
+	{
+		draw_window = !draw_window;
+	}
+
+	if (draw_window) {
+		ImGui::Begin("History", nullptr, ImGuiWindowFlags_None);
+		draw_history_window(runtime);
+		ImGui::End();
+	}
+}
+
+
+static void draw_settings(reshade::api::effect_runtime *runtime) {
+
+	unsigned int saved_key[4]{0,0,0,0};
+	for (int i = 0; i < 4; ++i) saved_key[i] = toggle_key[i];
+
+	if (ImGui::Button(draw_window ? "Attach Panel" : "Detach Panel"))
+		draw_window = !draw_window;
+	if (key_input_box("##toggle_key", saved_key, runtime))
+	{
+		set_toggle_key(saved_key);
+		reshade::set_config_value(nullptr, "history_window", "toggle_key", toggle_key[0]);
+	}
+
+	if (!draw_window) {
+		draw_history_window(runtime);
+	}
+}
 
 extern "C" __declspec(dllexport) const char *NAME = "History Window";
 extern "C" __declspec(dllexport) const char *DESCRIPTION = "Example add-on that adds an overlay that keeps track of changes to techniques and uniform variables and allows reverting and redoing them.";
@@ -379,7 +508,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		reshade::register_event<reshade::addon_event::reshade_set_current_preset_path>(on_set_current_preset_path);
 		reshade::register_event<reshade::addon_event::reshade_set_uniform_value>(on_set_uniform_value);
 		reshade::register_event<reshade::addon_event::reshade_set_technique_state>(on_set_technique_state);
-		reshade::register_overlay("History", draw_history_window);
+		reshade::register_overlay(nullptr, draw_settings);
+		reshade::register_overlay("OSD", osd_draw);
 		break;
 	case DLL_PROCESS_DETACH:
 		reshade::unregister_addon(hModule);
