@@ -48,6 +48,7 @@ void reshade::input::register_window_with_raw_input(window_handle window, bool n
 
 	if (!insert.second) insert.first->second |= flags;
 }
+
 std::shared_ptr<reshade::input> reshade::input::register_window(window_handle window)
 {
 	assert(window != nullptr);
@@ -326,14 +327,14 @@ bool reshade::input::is_any_key_released() const
 
 unsigned int reshade::input::last_key_pressed() const
 {
-	for (unsigned int i = VK_XBUTTON2 + 1; i < ARRAYSIZE(_keys); i++)
+	for (unsigned int i = VK_MBUTTON; i < ARRAYSIZE(_keys); i++)
 		if (is_key_pressed(i))
 			return i;
 	return 0;
 }
 unsigned int reshade::input::last_key_released() const
 {
-	for (unsigned int i = VK_XBUTTON2 + 1; i < ARRAYSIZE(_keys); i++)
+	for (unsigned int i = VK_MBUTTON; i < ARRAYSIZE(_keys); i++)
 		if (is_key_released(i))
 			return i;
 	return 0;
@@ -543,7 +544,7 @@ bool reshade::input::is_blocking_any_mouse_cursor_warping()
 
 extern "C" BOOL WINAPI HookGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
-#if 1
+#ifndef RESHADE_TEST_APPLICATION
 	DWORD mask = QS_ALLINPUT;
 	if (wMsgFilterMin != 0 || wMsgFilterMax != 0)
 	{
@@ -600,7 +601,7 @@ extern "C" BOOL WINAPI HookGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMi
 }
 extern "C" BOOL WINAPI HookGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
-#if 1
+#ifndef RESHADE_TEST_APPLICATION
 	DWORD mask = QS_ALLINPUT;
 	if (wMsgFilterMin != 0 || wMsgFilterMax != 0)
 	{
