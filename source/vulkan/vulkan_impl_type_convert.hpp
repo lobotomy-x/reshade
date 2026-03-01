@@ -23,8 +23,10 @@ namespace reshade::vulkan
 	static_assert(sizeof(VkViewport) == sizeof(api::viewport));
 	static_assert(sizeof(VkDescriptorSet) == sizeof(api::descriptor_table));
 	static_assert(sizeof(VkDescriptorBufferInfo) == sizeof(api::buffer_range));
+#if VK_KHR_acceleration_structure
 	static_assert(sizeof(VkAccelerationStructureKHR) == sizeof(api::resource_view));
 	static_assert(sizeof(VkAccelerationStructureInstanceKHR) == sizeof(api::acceleration_structure_instance));
+#endif
 
 	template <VkObjectType type>
 	struct object_data;
@@ -173,6 +175,7 @@ namespace reshade::vulkan
 		VkQueryType type;
 	};
 
+#if VK_KHR_acceleration_structure
 	template <>
 	struct object_data<VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR>
 	{
@@ -180,6 +183,7 @@ namespace reshade::vulkan
 
 		VkAccelerationStructureCreateInfoKHR create_info;
 	};
+#endif
 
 	auto convert_format(api::format format, VkComponentMapping *components = nullptr) -> VkFormat;
 	auto convert_format(VkFormat vk_format, const VkComponentMapping *components = nullptr) -> api::format;
@@ -198,6 +202,64 @@ namespace reshade::vulkan
 		return VK_IMAGE_ASPECT_COLOR_BIT;
 	}
 
+	inline void convert_subresource(uint32_t subresource, const VkImageCreateInfo &create_info, VkImageSubresourceLayers &subresource_info)
+	{
+		subresource_info.aspectMask = aspect_flags_from_format(create_info.format);
+		subresource_info.mipLevel = subresource % create_info.mipLevels;
+		subresource_info.baseArrayLayer = subresource / create_info.mipLevels;
+		subresource_info.layerCount = 1;
+	}
+	inline void convert_subresource_box(uint32_t subresource, const reshade::api::subresource_box *box, const VkImageCreateInfo &create_info, VkImageSubresourceLayers &subresource_info, VkOffset3D &offset, VkExtent3D &extent)
+	{
+		convert_subresource(subresource, create_info, subresource_info);
+
+		if (box != nullptr)
+		{
+			std::copy_n(&box->left, 3, &offset.x);
+
+			extent.width  = box->width();
+			extent.height = box->height();
+			extent.depth  = box->depth();
+
+			if (create_info.imageType != VK_IMAGE_TYPE_3D)
+			{
+				subresource_info.layerCount = extent.depth;
+				extent.depth = 1;
+			}
+		}
+		else
+		{
+			offset = { 0, 0, 0 };
+
+			extent.width  = std::max(1u, create_info.extent.width  >> (subresource % create_info.mipLevels));
+			extent.height = std::max(1u, create_info.extent.height >> (subresource % create_info.mipLevels));
+			extent.depth  = std::max(1u, create_info.extent.depth  >> (subresource % create_info.mipLevels));
+		}
+	}
+	inline void convert_subresource_box(uint32_t subresource, const reshade::api::subresource_box *box, const VkImageCreateInfo &create_info, VkImageSubresourceLayers &subresource_info, VkOffset3D(&offsets)[2])
+	{
+		convert_subresource(subresource, create_info, subresource_info);
+
+		if (box != nullptr)
+		{
+			std::copy_n(&box->left, 6, &offsets[0].x);
+
+			if (create_info.imageType != VK_IMAGE_TYPE_3D)
+			{
+				subresource_info.layerCount = box->depth();
+				offsets[1].z = offsets[0].z + 1;
+			}
+		}
+		else
+		{
+			offsets[0] = { 0, 0, 0 };
+			offsets[1] = {
+				static_cast<int32_t>(std::max(1u, create_info.extent.width  >> subresource_info.mipLevel)),
+				static_cast<int32_t>(std::max(1u, create_info.extent.height >> subresource_info.mipLevel)),
+				static_cast<int32_t>(std::max(1u, create_info.extent.depth  >> subresource_info.mipLevel)) };
+		}
+	}
+
 	auto convert_access_to_usage(VkAccessFlags2 flags) -> api::resource_usage;
 	auto convert_image_layout_to_usage(VkImageLayout layout) -> api::resource_usage;
 	void convert_image_usage_flags_to_usage(const VkImageUsageFlags image_flags, api::resource_usage &usage);
@@ -205,7 +267,7 @@ namespace reshade::vulkan
 
 	auto convert_usage_to_access(api::resource_usage state) -> VkAccessFlags;
 	auto convert_usage_to_image_layout(api::resource_usage state) -> VkImageLayout;
-	auto convert_usage_to_pipeline_stage(api::resource_usage state, bool src_stage, const VkPhysicalDeviceFeatures &enabled_features, bool enabled_ray_tracing) -> VkPipelineStageFlags;
+	auto convert_usage_to_pipeline_stage(api::resource_usage state, bool src_stage, const VkPhysicalDeviceFeatures &enabled_features, const GladVulkanContext &context) -> VkPipelineStageFlags;
 
 	void convert_usage_to_image_usage_flags(api::resource_usage usage, VkImageUsageFlags &image_flags);
 	void convert_usage_to_buffer_usage_flags(api::resource_usage usage, VkBufferUsageFlags &buffer_flags);
@@ -220,19 +282,25 @@ namespace reshade::vulkan
 
 	void convert_resource_view_desc(const api::resource_view_desc &desc, VkImageViewCreateInfo &create_info);
 	void convert_resource_view_desc(const api::resource_view_desc &desc, VkBufferViewCreateInfo &create_info);
+#if VK_KHR_acceleration_structure
 	void convert_resource_view_desc(const api::resource_view_desc &desc, VkAccelerationStructureCreateInfoKHR &create_info);
+#endif
 	api::resource_view_desc convert_resource_view_desc(const VkImageViewCreateInfo &create_info);
 	api::resource_view_desc convert_resource_view_desc(const VkBufferViewCreateInfo &create_info);
+#if VK_KHR_acceleration_structure
 	api::resource_view_desc convert_resource_view_desc(const VkAccelerationStructureCreateInfoKHR &create_info);
+#endif
 
 	void convert_dynamic_states(uint32_t count, const api::dynamic_state *states, std::vector<VkDynamicState> &internal_states);
 	std::vector<api::dynamic_state> convert_dynamic_states(const VkPipelineDynamicStateCreateInfo *create_info);
 
-	void convert_input_layout_desc(uint32_t count, const api::input_element *elements, std::vector<VkVertexInputBindingDescription> &vertex_bindings, std::vector<VkVertexInputAttributeDescription> &vertex_attributes);
+	void convert_input_layout_desc(uint32_t count, const api::input_element *elements, std::vector<VkVertexInputBindingDescription> &vertex_bindings, std::vector<VkVertexInputAttributeDescription> &vertex_attributes, std::vector<VkVertexInputBindingDivisorDescription> &vertex_binding_divisors);
 	std::vector<api::input_element> convert_input_layout_desc(const VkPipelineVertexInputStateCreateInfo *create_info);
 
+#if VK_EXT_transform_feedback
 	void convert_stream_output_desc(const api::stream_output_desc &desc, VkPipelineRasterizationStateCreateInfo &create_info);
 	api::stream_output_desc convert_stream_output_desc(const VkPipelineRasterizationStateCreateInfo *create_info);
+#endif
 	void convert_blend_desc(const api::blend_desc &desc, VkPipelineColorBlendStateCreateInfo &create_info, VkPipelineMultisampleStateCreateInfo &multisample_create_info);
 	api::blend_desc convert_blend_desc(const VkPipelineColorBlendStateCreateInfo *create_info, const VkPipelineMultisampleStateCreateInfo *multisample_create_info);
 	void convert_rasterizer_desc(const api::rasterizer_desc &desc, VkPipelineRasterizationStateCreateInfo &create_info);
@@ -270,8 +338,11 @@ namespace reshade::vulkan
 
 	auto convert_pipeline_flags(api::pipeline_flags value) -> VkPipelineCreateFlags;
 	auto convert_pipeline_flags(VkPipelineCreateFlags2 value) -> api::pipeline_flags;
+#if VK_KHR_ray_tracing_pipeline
 	auto convert_shader_group_type(api::shader_group_type value) -> VkRayTracingShaderGroupTypeKHR;
 	auto convert_shader_group_type(VkRayTracingShaderGroupTypeKHR value) -> api::shader_group_type;
+#endif
+#if VK_KHR_acceleration_structure
 	auto convert_acceleration_structure_type(api::acceleration_structure_type value) -> VkAccelerationStructureTypeKHR;
 	auto convert_acceleration_structure_type(VkAccelerationStructureTypeKHR value) -> api::acceleration_structure_type;
 	auto convert_acceleration_structure_copy_mode(api::acceleration_structure_copy_mode value) -> VkCopyAccelerationStructureModeKHR;
@@ -281,6 +352,7 @@ namespace reshade::vulkan
 
 	void convert_acceleration_structure_build_input(const api::acceleration_structure_build_input &build_input, VkAccelerationStructureGeometryKHR &geometry, VkAccelerationStructureBuildRangeInfoKHR &range_info);
 	api::acceleration_structure_build_input convert_acceleration_structure_build_input(const VkAccelerationStructureGeometryKHR &geometry, const VkAccelerationStructureBuildRangeInfoKHR &range_info);
+#endif
 
 	auto convert_shader_stages(VkPipelineBindPoint value) -> api::shader_stage;
 	auto convert_pipeline_stages(api::pipeline_stage value) -> VkPipelineBindPoint;

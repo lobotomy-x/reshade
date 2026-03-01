@@ -26,7 +26,7 @@
 
 #include "reshade_api_format.hpp"
 
-namespace reshade { namespace api
+namespace reshade::api
 {
 	/// <summary>
 	/// Comparison operations.
@@ -196,6 +196,11 @@ namespace reshade { namespace api
 		/// Required for <see cref="map_access::write_discard"/>. The flag is not supported in D3D12 or Vulkan.
 		/// </summary>
 		dynamic = (1 << 3),
+		/// <summary>
+		/// Immutable resources can never be written to again after creationn, either by the CPU or the GPU.
+		/// The flag is only supported in D3D10 and D3D11.
+		/// </summary>
+		immutable = (1 << 4),
 		/// <summary>
 		/// Required to create <see cref="resource_view_type::texture_cube"/> or <see cref="resource_view_type::texture_cube_array"/> views of the resource.
 		/// </summary>
@@ -720,4 +725,4 @@ namespace reshade { namespace api
 		/// </summary>
 		acceleration_structure_build_input_flags flags = acceleration_structure_build_input_flags::none;
 	};
-} }
+}

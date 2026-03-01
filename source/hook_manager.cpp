@@ -35,7 +35,7 @@ extern HMODULE g_module_handle;
 HMODULE g_export_module_handle = nullptr;
 static bool s_is_loading_export_module = false;
 extern std::filesystem::path g_reshade_dll_path;
-static std::filesystem::path s_export_hook_path;
+static std::filesystem::path s_export_module_path;
 static std::shared_mutex s_hooks_mutex;
 static std::vector<named_hook> s_hooks;
 static std::shared_mutex s_delayed_hook_paths_mutex;
@@ -134,7 +134,11 @@ static bool install_internal(const char *name, reshade::hook &hook, hook_method 
 }
 static bool install_internal(HMODULE target_module, HMODULE replacement_module, hook_method method)
 {
-	assert(target_module != nullptr && replacement_module != nullptr && target_module != replacement_module);
+	if (target_module == nullptr || replacement_module == nullptr || target_module == replacement_module)
+	{
+		reshade::log::message(reshade::log::level::warning, "> Invalid module! Skipped.");
+		return false;
+	}
 
 	// Load export tables from both modules
 	const std::vector<module_export> target_exports = enumerate_module_exports(target_module);
@@ -319,13 +323,9 @@ static void install_delayed_hooks(const std::filesystem::path &loaded_path, bool
 	}
 
 	const auto check_delayed_hook_path = [](const std::filesystem::path &path) -> HMODULE {
-		// Skip export module if it was loaded somehow before/outside of 'ensure_export_module_loaded' below
-		if (path == s_export_hook_path)
-			return nullptr;
-
 		// Pin the module so it cannot be unloaded by the application and cause problems when ReShade tries to call into it afterwards
 		HMODULE delayed_handle = nullptr;
-		if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, path.c_str(), &delayed_handle))
+		if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, path.c_str(), &delayed_handle) || delayed_handle == g_module_handle)
 			return nullptr;
 
 		return delayed_handle;
@@ -333,7 +333,9 @@ static void install_delayed_hooks(const std::filesystem::path &loaded_path, bool
 	const auto install_delayed_hook_path = [&loaded_path](const std::filesystem::path &path, HMODULE delayed_handle) {
 		reshade::log::message(reshade::log::level::info, "Installing delayed hooks for '%s' (Just loaded via LoadLibrary('%s')) ...", path.u8string().c_str(), loaded_path.u8string().c_str());
 
-		install_internal(delayed_handle, g_module_handle, hook_method::function_hook) && reshade::hook::apply_queued_actions();
+		install_internal(delayed_handle, g_module_handle, hook_method::function_hook);
+		if (!reshade::hook::apply_queued_actions())
+			reshade::log::message(reshade::log::level::error, "Failed to install hooks for '%s'!", path.u8string().c_str());
 	};
 
 	if (const auto it = std::find_if(s_delayed_hook_paths.begin(), s_delayed_hook_paths.end(),
@@ -507,7 +509,7 @@ void reshade::hooks::uninstall()
 	if (g_export_module_handle)
 	{
 		if (!FreeLibrary(g_export_module_handle))
-			log::message(log::level::warning, "Failed to unload '%s' with error code %lu!", s_export_hook_path.u8string().c_str(), GetLastError());
+			log::message(log::level::warning, "Failed to unload '%s' with error code %lu!", s_export_module_path.u8string().c_str(), GetLastError());
 		g_export_module_handle = nullptr;
 	}
 }
@@ -556,14 +558,21 @@ void reshade::hooks::register_module(const std::filesystem::path &target_path)
 	const std::filesystem::path replacement_name = g_reshade_dll_path.filename();
 	if (_wcsicmp(target_name.c_str(), replacement_name.c_str()) == 0)
 	{
-		assert(target_path != g_reshade_dll_path);
+		assert(target_path != g_reshade_dll_path && target_path.is_absolute());
 
-		log::message(log::level::info, "> Delayed until first call to an exported function.");
+		if (!s_export_module_path.empty())
+		{
+			log::message(log::level::info, "> Skipped.");
+		}
+		else
+		{
+			log::message(log::level::info, "> Delayed until first call to an exported function.");
 
-		s_export_hook_path = target_path;
+			register_export_module(target_path);
 
-		// Register for function hooking as well, in case a third party (like NVIDIA Streamline) explicitly loads the system library between now and the first call to an exported function
-		s_delayed_hook_paths.push_back(target_path);
+			// Register for function hooking as well, in case a third party (like NVIDIA Streamline) explicitly loads the system library between now and the first call to an exported function
+			s_delayed_hook_paths.push_back(target_path);
+		}
 	}
 	// Similarly, if the target module was not loaded yet, wait for it to get loaded in one of the 'LoadLibrary' hooks and install it then
 	// Pin the module so it cannot be unloaded by the application and cause problems when ReShade tries to call into it afterwards
@@ -578,24 +587,28 @@ void reshade::hooks::register_module(const std::filesystem::path &target_path)
 		log::message(log::level::info, "> Libraries loaded.");
 
 		install_internal(handle, g_module_handle, hook_method::function_hook);
-
-		hook::apply_queued_actions();
+		if (!hook::apply_queued_actions())
+			log::message(log::level::error, "Failed to install hooks for '%s'!", target_path.u8string().c_str());
 	}
+}
+void reshade::hooks::register_export_module(const std::filesystem::path &target_path)
+{
+	s_export_module_path = target_path;
 }
 
 void reshade::hooks::ensure_export_module_loaded()
 {
 	const std::unique_lock<std::shared_mutex> lock(s_delayed_hook_paths_mutex);
 
-	if (!g_export_module_handle && !s_export_hook_path.empty())
+	if (!g_export_module_handle && !s_export_module_path.empty())
 	{
-		assert(s_export_hook_path.is_absolute() && !s_is_loading_export_module);
+		assert(s_export_module_path.is_absolute() && !s_is_loading_export_module);
+
+		log::message(log::level::info, "Installing export hooks for '%s' ...", s_export_module_path.u8string().c_str());
 
 		s_is_loading_export_module = true;
-		const HMODULE handle = LoadLibraryW(s_export_hook_path.c_str());
+		const HMODULE handle = LoadLibraryW(s_export_module_path.c_str());
 		s_is_loading_export_module = false;
-
-		log::message(log::level::info, "Installing export hooks for '%s' ...", s_export_hook_path.u8string().c_str());
 
 		if (handle != nullptr)
 		{
@@ -604,11 +617,11 @@ void reshade::hooks::ensure_export_module_loaded()
 			install_internal(handle, g_module_handle, hook_method::export_hook);
 
 			g_export_module_handle = handle;
-			s_delayed_hook_paths.erase(std::remove(s_delayed_hook_paths.begin(), s_delayed_hook_paths.end(), s_export_hook_path), s_delayed_hook_paths.end());
+			s_delayed_hook_paths.erase(std::remove(s_delayed_hook_paths.begin(), s_delayed_hook_paths.end(), s_export_module_path), s_delayed_hook_paths.end());
 		}
 		else
 		{
-			log::message(log::level::error, "Failed to load '%s'!", s_export_hook_path.u8string().c_str());
+			log::message(log::level::error, "Failed to load '%s' with error code %lu!", s_export_module_path.u8string().c_str(), GetLastError());
 		}
 	}
 }

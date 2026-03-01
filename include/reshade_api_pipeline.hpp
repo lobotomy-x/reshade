@@ -6,8 +6,9 @@
 #pragma once
 
 #include "reshade_api_resource.hpp"
+#include <cstddef>
 
-namespace reshade { namespace api
+namespace reshade::api
 {
 	/// <summary>
 	/// Flags that specify the shader stages in the render pipeline.
@@ -83,6 +84,14 @@ namespace reshade { namespace api
 		/// </summary>
 		sampler_with_resource_view = 1,
 		/// <summary>
+		/// Descriptors are either of type <see cref="buffer_shader_resource_view"/> or <see cref="texture_shader_resource_view"/>.
+		/// </summary>
+		shader_resource_view = 2,
+		/// <summary>
+		/// Descriptors are either of type <see cref="buffer_unordered_access_view"/> or <see cref="texture_unordered_access_view"/>.
+		/// </summary>
+		unordered_access_view = 3,
+		/// <summary>
 		/// Descriptors are an array of <see cref="resource_view"/>.
 		/// </summary>
 		buffer_shader_resource_view = 4,
@@ -93,19 +102,11 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Descriptors are an array of <see cref="resource_view"/>.
 		/// </summary>
-		texture_shader_resource_view = 2,
+		texture_shader_resource_view = shader_resource_view,
 		/// <summary>
 		/// Descriptors are an array of <see cref="resource_view"/>.
 		/// </summary>
-		texture_unordered_access_view = 3,
-		/// <summary>
-		/// Descriptors are either of type <see cref="buffer_shader_resource_view"/> or <see cref="texture_shader_resource_view"/>.
-		/// </summary>
-		shader_resource_view = texture_shader_resource_view,
-		/// <summary>
-		/// Descriptors are either of type <see cref="buffer_unordered_access_view"/> or <see cref="texture_unordered_access_view"/>.
-		/// </summary>
-		unordered_access_view = texture_unordered_access_view,
+		texture_unordered_access_view = unordered_access_view,
 		/// <summary>
 		/// Descriptors are an array of <see cref="buffer_range"/>.
 		/// </summary>
@@ -117,7 +118,7 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Descriptors are an array of <see cref="resource_view"/>.
 		/// </summary>
-		acceleration_structure = 8
+		acceleration_structure = 10
 	};
 
 	/// <summary>
@@ -140,6 +141,7 @@ namespace reshade { namespace api
 	{
 		/// <summary>
 		/// OpenGL uniform buffer binding index.
+		/// In Vulkan this is equivalent to an offset for the range (in 32-bit values).
 		/// </summary>
 		uint32_t binding = 0;
 		/// <summary>
@@ -1387,4 +1389,4 @@ namespace reshade { namespace api
 	/// </para>
 	/// </summary>
 	RESHADE_DEFINE_HANDLE(fence);
-} }
+}
