@@ -119,8 +119,9 @@ namespace reshade::vulkan
 	{
 		using Handle = VkPipelineLayout;
 
-		std::vector<VkDescriptorSetLayout> set_layouts;
 		std::vector<VkSampler> embedded_samplers;
+		std::vector<VkDescriptorSetLayout> set_layouts;
+		bool owns_set_layouts;
 	};
 
 	template <>
@@ -130,7 +131,7 @@ namespace reshade::vulkan
 
 		uint32_t num_descriptors;
 		std::vector<api::descriptor_range> ranges;
-		std::vector<api::descriptor_range_with_static_samplers> ranges_with_static_samplers;
+		std::vector<api::descriptor_range_with_flags> ranges_with_flags;
 		std::vector<std::vector<api::sampler_desc>> static_samplers;
 		std::vector<uint32_t> binding_to_offset;
 		bool push_descriptors;
@@ -185,6 +186,12 @@ namespace reshade::vulkan
 	};
 #endif
 
+	template <typename T>
+	void hash_combine(size_t &seed, const T &v)
+	{
+		seed ^= std::hash<T>()(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+	}
+
 	auto convert_format(api::format format, VkComponentMapping *components = nullptr) -> VkFormat;
 	auto convert_format(VkFormat vk_format, const VkComponentMapping *components = nullptr) -> api::format;
 
@@ -209,56 +216,8 @@ namespace reshade::vulkan
 		subresource_info.baseArrayLayer = subresource / create_info.mipLevels;
 		subresource_info.layerCount = 1;
 	}
-	inline void convert_subresource_box(uint32_t subresource, const reshade::api::subresource_box *box, const VkImageCreateInfo &create_info, VkImageSubresourceLayers &subresource_info, VkOffset3D &offset, VkExtent3D &extent)
-	{
-		convert_subresource(subresource, create_info, subresource_info);
-
-		if (box != nullptr)
-		{
-			std::copy_n(&box->left, 3, &offset.x);
-
-			extent.width  = box->width();
-			extent.height = box->height();
-			extent.depth  = box->depth();
-
-			if (create_info.imageType != VK_IMAGE_TYPE_3D)
-			{
-				subresource_info.layerCount = extent.depth;
-				extent.depth = 1;
-			}
-		}
-		else
-		{
-			offset = { 0, 0, 0 };
-
-			extent.width  = std::max(1u, create_info.extent.width  >> (subresource % create_info.mipLevels));
-			extent.height = std::max(1u, create_info.extent.height >> (subresource % create_info.mipLevels));
-			extent.depth  = std::max(1u, create_info.extent.depth  >> (subresource % create_info.mipLevels));
-		}
-	}
-	inline void convert_subresource_box(uint32_t subresource, const reshade::api::subresource_box *box, const VkImageCreateInfo &create_info, VkImageSubresourceLayers &subresource_info, VkOffset3D(&offsets)[2])
-	{
-		convert_subresource(subresource, create_info, subresource_info);
-
-		if (box != nullptr)
-		{
-			std::copy_n(&box->left, 6, &offsets[0].x);
-
-			if (create_info.imageType != VK_IMAGE_TYPE_3D)
-			{
-				subresource_info.layerCount = box->depth();
-				offsets[1].z = offsets[0].z + 1;
-			}
-		}
-		else
-		{
-			offsets[0] = { 0, 0, 0 };
-			offsets[1] = {
-				static_cast<int32_t>(std::max(1u, create_info.extent.width  >> subresource_info.mipLevel)),
-				static_cast<int32_t>(std::max(1u, create_info.extent.height >> subresource_info.mipLevel)),
-				static_cast<int32_t>(std::max(1u, create_info.extent.depth  >> subresource_info.mipLevel)) };
-		}
-	}
+	void convert_subresource_box(uint32_t subresource, const reshade::api::subresource_box *box, const VkImageCreateInfo &create_info, VkImageSubresourceLayers &subresource_info, VkOffset3D &offset, VkExtent3D &extent);
+	void convert_subresource_box(uint32_t subresource, const reshade::api::subresource_box *box, const VkImageCreateInfo &create_info, VkImageSubresourceLayers &subresource_info, VkOffset3D(&offsets)[2]);
 
 	auto convert_access_to_usage(VkAccessFlags2 flags) -> api::resource_usage;
 	auto convert_image_layout_to_usage(VkImageLayout layout) -> api::resource_usage;
@@ -330,11 +289,20 @@ namespace reshade::vulkan
 
 	auto convert_descriptor_type(api::descriptor_type value) -> VkDescriptorType;
 	auto convert_descriptor_type(VkDescriptorType value) -> api::descriptor_type;
+	auto convert_descriptor_range_flags(api::descriptor_range_flags value) -> VkDescriptorBindingFlags;
+	auto convert_descriptor_range_flags(VkDescriptorBindingFlags value) -> api::descriptor_range_flags;
 
+	auto convert_render_pass_flags(api::render_pass_flags value) -> VkRenderingFlags;
+	auto convert_render_pass_flags(VkRenderingFlags value) -> api::render_pass_flags;
 	auto convert_render_pass_load_op(api::render_pass_load_op value) -> VkAttachmentLoadOp;
 	auto convert_render_pass_load_op(VkAttachmentLoadOp value) -> api::render_pass_load_op;
 	auto convert_render_pass_store_op(api::render_pass_store_op value) -> VkAttachmentStoreOp;
 	auto convert_render_pass_store_op(VkAttachmentStoreOp value) -> api::render_pass_store_op;
+
+	void convert_render_pass_render_target_desc(const api::render_pass_render_target_desc &desc, VkRenderingAttachmentInfo &color_attachment_info);
+	api::render_pass_render_target_desc convert_render_pass_render_target_desc(const VkRenderingAttachmentInfo *color_attachment_info);
+	void convert_render_pass_depth_stencil_desc(const api::render_pass_depth_stencil_desc &desc, VkImageAspectFlags aspect_flags, VkRenderingAttachmentInfo &depth_attachment_info, VkRenderingAttachmentInfo &stencil_attachment_info);
+	api::render_pass_depth_stencil_desc convert_render_pass_depth_stencil_desc(const VkRenderingAttachmentInfo *depth_attachment_info, const VkRenderingAttachmentInfo *stencil_attachment_info);
 
 	auto convert_pipeline_flags(api::pipeline_flags value) -> VkPipelineCreateFlags;
 	auto convert_pipeline_flags(VkPipelineCreateFlags2 value) -> api::pipeline_flags;

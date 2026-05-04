@@ -67,7 +67,7 @@ public:
 			/* Signed integer uniforms */ reshade::api::constant_range { UINT32_MAX, 0, 0, static_cast<uint32_t>(max_uniform_locations) * 4, reshade::api::shader_stage::all },
 			/* Unsigned integer uniforms */ reshade::api::constant_range { UINT32_MAX, 0, 0, static_cast<uint32_t>(max_uniform_locations) * 4, reshade::api::shader_stage::all },
 		};
-		device_impl::create_pipeline_layout(static_cast<uint32_t>(std::size(global_pipeline_layout_params)), global_pipeline_layout_params, &_global_pipeline_layout);
+		device_impl::create_pipeline_layout(std::size(global_pipeline_layout_params), global_pipeline_layout_params, &_global_pipeline_layout);
 		reshade::invoke_addon_event<reshade::addon_event::init_pipeline_layout>(this, static_cast<uint32_t>(std::size(global_pipeline_layout_params)), global_pipeline_layout_params, _global_pipeline_layout);
 
 		reshade::invoke_addon_event<reshade::addon_event::init_command_list>(this);
@@ -170,7 +170,7 @@ public:
 		_init_effect_runtime = true;
 
 #if RESHADE_ADDON
-		const auto device = static_cast<wgl_device *>(get_device());
+		const auto device = static_cast<wgl_device *>(_device);
 
 		reshade::invoke_addon_event<reshade::addon_event::init_swapchain>(this, resize);
 
@@ -218,7 +218,7 @@ public:
 		_last_height = 0;
 
 #if RESHADE_ADDON
-		const auto device = static_cast<wgl_device *>(get_device());
+		const auto device = static_cast<wgl_device *>(_device);
 
 		if (device->_default_depth_format != reshade::api::format::unknown)
 		{

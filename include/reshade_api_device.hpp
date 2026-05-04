@@ -32,7 +32,7 @@ namespace reshade::api
 		opengl = 0x10000,
 		/// <summary>Vulkan</summary>
 		/// <remarks>https://www.khronos.org/vulkan/</remarks>
-		vulkan = 0x20000
+		vulkan = 0x20000,
 	};
 
 	/// <summary>
@@ -557,12 +557,13 @@ namespace reshade::api
 		/// Gets the results of queries in a query heap.
 		/// </summary>
 		/// <param name="heap">Query heap that contains the queries.</param>
+		/// <param name="type">Type of the queries to copy.</param>
 		/// <param name="first">Index of the first query in the query heap to copy the results from.</param>
 		/// <param name="count">Number of query results to copy.</param>
 		/// <param name="results">Pointer to the first element of an array that is filled with the results. The necessary data type is documented at the <see cref="query_type"/> enumeration.</param>
 		/// <param name="stride">Size (in bytes) of each element in the <paramref name="results"/> array.</param>
 		/// <returns><see langword="true"/> if the query results were successfully downloaded from the GPU, <see langword="false"/> otherwise.</returns>
-		virtual bool get_query_heap_results(query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride) = 0;
+		virtual bool get_query_heap_results(query_heap heap, query_type type, uint32_t first, uint32_t count, void *results, uint32_t stride) = 0;
 
 		/// <summary>
 		/// Associates a name with a resource, for easier debugging in external tools.
@@ -674,7 +675,7 @@ namespace reshade::api
 		draw_indexed,
 		dispatch,
 		dispatch_mesh,
-		dispatch_rays
+		dispatch_rays,
 	};
 
 	/// <summary>
@@ -710,7 +711,7 @@ namespace reshade::api
 		/// <param name="count">Number of render target views to bind.</param>
 		/// <param name="rts">Pointer to the first element of an array of render target descriptions.</param>
 		/// <param name="ds">Optional pointer to a depth-stencil description, or <see langword="nullptr"/> to bind none.</param>
-		virtual void begin_render_pass(uint32_t count, const render_pass_render_target_desc *rts, const render_pass_depth_stencil_desc *ds = nullptr) = 0;
+		virtual void begin_render_pass(uint32_t count, const render_pass_render_target_desc *rts, const render_pass_depth_stencil_desc *ds = nullptr, render_pass_flags flags = render_pass_flags::none) = 0;
 		/// <summary>
 		/// Ends a render pass.
 		/// This must be preceeded by a call to <see cref="begin_render_pass"/>.
@@ -1177,7 +1178,7 @@ namespace reshade::api
 	{
 		graphics = 0x1,
 		compute = 0x2,
-		copy = 0x4
+		copy = 0x4,
 	};
 	RESHADE_DEFINE_ENUM_FLAG_OPERATORS(command_queue_type);
 
@@ -1299,6 +1300,11 @@ namespace reshade::api
 		/// </list>
 		/// </summary>
 		uint32_t sync_interval = UINT32_MAX;
+
+		/// <summary>
+		/// Color space used for presentation.
+		/// </summary>
+		color_space color_space = color_space::unknown;
 	};
 
 	/// <summary>

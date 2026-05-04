@@ -13,7 +13,6 @@
 #include "ini_file.hpp"
 #include "addon_manager.hpp"
 #include "input.hpp"
-#include "input_gamepad.hpp"
 #include "imgui_widgets.hpp"
 #include "localization.hpp"
 #include "platform_utils.hpp"
@@ -152,13 +151,19 @@ void reshade::runtime::build_font_atlas()
 	if (language.empty())
 		language = resources::get_current_language();
 
-	if (language.find("bg") == 0 || language.find("ru") == 0 || language.find("sl") == 0 || language.find("tr") == 0 || language.find("th") == 0)
+	if (language.compare(0, 2, "ar") == 0 ||
+		language.compare(0, 2, "bg") == 0 ||
+		language.compare(0, 2, "pl") == 0 ||
+		language.compare(0, 2, "ru") == 0 ||
+		language.compare(0, 2, "sl") == 0 ||
+		language.compare(0, 2, "tr") == 0 ||
+		language.compare(0, 2, "th") == 0)
 	{
 		// Microsoft Sans Serif
 		_default_font_path = L"C:\\Windows\\Fonts\\micross.ttf";
 	}
 	else
-	if (language.find("ja") == 0)
+	if (language.compare(0, 2, "ja") == 0)
 	{
 		// Morisawa BIZ UDGothic Regular, available since Windows 10 October 2018 Update (1809) Build 17763.1
 		_default_font_path = L"C:\\Windows\\Fonts\\BIZ-UDGothicR.ttc";
@@ -167,13 +172,13 @@ void reshade::runtime::build_font_atlas()
 			_default_font_path = L"C:\\Windows\\Fonts\\msgothic.ttc";
 	}
 	else
-	if (language.find("ko") == 0)
+	if (language.compare(0, 2, "ko") == 0)
 	{
 		// Malgun Gothic
 		_default_font_path = L"C:\\Windows\\Fonts\\malgun.ttf";
 	}
 	else
-	if (language.find("zh") == 0)
+	if (language.compare(0, 2, "zh") == 0)
 	{
 		// Simplified Chinese (zh-CN, zh-SG, ...)
 		if (language.find("HK") == std::string::npos && language.find("TW") == std::string::npos && language.find("Hant") == std::string::npos)
@@ -761,7 +766,7 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		if (_show_overlay && !_ignore_shortcuts && _input->is_key_pressed(0x1B /* VK_ESCAPE */) &&
+		if (_show_overlay && !_ignore_shortcuts && _input->is_key_pressed(input::key_escape) &&
 			(_input_processing_mode == 2 || (_input_processing_mode == 1 && (_imgui_context->IO.WantCaptureMouse || _imgui_context->IO.WantCaptureKeyboard))) && !_imgui_context->IO.NavVisible)
 			show_overlay = false; // Close when pressing the escape button, input focus is on the overlay and not currently navigating with the keyboard
 		else if (!_ignore_shortcuts && _input->is_key_pressed(_overlay_key_data, _force_shortcut_modifiers) && _imgui_context->ActiveId == 0)
@@ -861,30 +866,30 @@ void reshade::runtime::draw_gui()
 
 		// Update all the button states
 		constexpr std::pair<ImGuiKey, unsigned int> key_mappings[] = {
-			{ ImGuiKey_Tab, 0x09 /* VK_TAB */ },
-			{ ImGuiKey_LeftArrow, 0x25 /* VK_LEFT */ },
-			{ ImGuiKey_RightArrow, 0x27 /* VK_RIGHT */ },
-			{ ImGuiKey_UpArrow, 0x26 /* VK_UP */ },
-			{ ImGuiKey_DownArrow, 0x28 /* VK_DOWN */ },
-			{ ImGuiKey_PageUp, 0x21 /* VK_PRIOR */ },
-			{ ImGuiKey_PageDown, 0x22 /* VK_NEXT */ },
-			{ ImGuiKey_End, 0x23 /* VK_END */ },
-			{ ImGuiKey_Home, 0x24 /* VK_HOME */ },
-			{ ImGuiKey_Insert, 0x2D /* VK_INSERT */ },
-			{ ImGuiKey_Delete, 0x2E /* VK_DELETE */ },
-			{ ImGuiKey_Backspace, 0x08 /* VK_BACK */ },
-			{ ImGuiKey_Space, 0x20 /* VK_SPACE */ },
-			{ ImGuiKey_Enter, 0x0D /* VK_RETURN */ },
-			{ ImGuiKey_Escape, 0x1B /* VK_ESCAPE */ },
-			{ ImGuiKey_LeftCtrl, 0xA2 /* VK_LCONTROL */ },
-			{ ImGuiKey_LeftShift, 0xA0 /* VK_LSHIFT */ },
-			{ ImGuiKey_LeftAlt, 0xA4 /* VK_LMENU */ },
-			{ ImGuiKey_LeftSuper, 0x5B /* VK_LWIN */ },
-			{ ImGuiKey_RightCtrl, 0xA3 /* VK_RCONTROL */ },
-			{ ImGuiKey_RightShift, 0xA1 /* VK_RSHIFT */ },
-			{ ImGuiKey_RightAlt, 0xA5 /* VK_RMENU */ },
-			{ ImGuiKey_RightSuper, 0x5C /* VK_RWIN */ },
-			{ ImGuiKey_Menu, 0x5D /* VK_APPS */ },
+			{ ImGuiKey_Tab, input::key_tab },
+			{ ImGuiKey_LeftArrow, input::key_left },
+			{ ImGuiKey_RightArrow, input::key_right },
+			{ ImGuiKey_UpArrow, input::key_up },
+			{ ImGuiKey_DownArrow, input::key_down },
+			{ ImGuiKey_PageUp, input::key_page_up },
+			{ ImGuiKey_PageDown, input::key_page_down },
+			{ ImGuiKey_End, input::key_end },
+			{ ImGuiKey_Home, input::key_home },
+			{ ImGuiKey_Insert, input::key_insert },
+			{ ImGuiKey_Delete, input::key_delete },
+			{ ImGuiKey_Backspace, input::key_backspace },
+			{ ImGuiKey_Space, input::key_space },
+			{ ImGuiKey_Enter, input::key_return },
+			{ ImGuiKey_Escape, input::key_escape },
+			{ ImGuiKey_LeftCtrl, input::key_left_ctrl },
+			{ ImGuiKey_LeftShift, input::key_left_shift },
+			{ ImGuiKey_LeftAlt, input::key_left_alt },
+			{ ImGuiKey_LeftSuper, input::key_left_windows },
+			{ ImGuiKey_RightCtrl, input::key_right_ctrl },
+			{ ImGuiKey_RightShift, input::key_right_shift },
+			{ ImGuiKey_RightAlt, input::key_right_alt },
+			{ ImGuiKey_RightSuper, input::key_right_windows },
+			{ ImGuiKey_Menu, input::key_application },
 			{ ImGuiKey_0, '0' },
 			{ ImGuiKey_1, '1' },
 			{ ImGuiKey_2, '2' },
@@ -921,53 +926,53 @@ void reshade::runtime::draw_gui()
 			{ ImGuiKey_X, 'X' },
 			{ ImGuiKey_Y, 'Y' },
 			{ ImGuiKey_Z, 'Z' },
-			{ ImGuiKey_F1, 0x70 /* VK_F1 */ },
-			{ ImGuiKey_F2, 0x71 /* VK_F2 */ },
-			{ ImGuiKey_F3, 0x72 /* VK_F3 */ },
-			{ ImGuiKey_F4, 0x73 /* VK_F4 */ },
-			{ ImGuiKey_F5, 0x74 /* VK_F5 */ },
-			{ ImGuiKey_F6, 0x75 /* VK_F6 */ },
-			{ ImGuiKey_F7, 0x76 /* VK_F7 */ },
-			{ ImGuiKey_F8, 0x77 /* VK_F8 */ },
-			{ ImGuiKey_F9, 0x78 /* VK_F9 */ },
-			{ ImGuiKey_F10, 0x79 /* VK_F10 */ },
-			{ ImGuiKey_F11, 0x80 /* VK_F11 */ },
-			{ ImGuiKey_F12, 0x81 /* VK_F12 */ },
-			{ ImGuiKey_Apostrophe, 0xDE /* VK_OEM_7 */ },
-			{ ImGuiKey_Comma, 0xBC /* VK_OEM_COMMA */ },
-			{ ImGuiKey_Minus, 0xBD /* VK_OEM_MINUS */ },
-			{ ImGuiKey_Period, 0xBE /* VK_OEM_PERIOD */ },
-			{ ImGuiKey_Slash, 0xBF /* VK_OEM_2 */ },
-			{ ImGuiKey_Semicolon, 0xBA /* VK_OEM_1 */ },
-			{ ImGuiKey_Equal, 0xBB /* VK_OEM_PLUS */ },
-			{ ImGuiKey_LeftBracket, 0xDB /* VK_OEM_4 */ },
-			{ ImGuiKey_Backslash, 0xDC /* VK_OEM_5 */ },
-			{ ImGuiKey_RightBracket, 0xDD /* VK_OEM_6 */ },
-			{ ImGuiKey_GraveAccent, 0xC0 /* VK_OEM_3 */ },
-			{ ImGuiKey_CapsLock, 0x14 /* VK_CAPITAL */ },
-			{ ImGuiKey_ScrollLock, 0x91 /* VK_SCROLL */ },
-			{ ImGuiKey_NumLock, 0x90 /* VK_NUMLOCK */ },
-			{ ImGuiKey_PrintScreen, 0x2C /* VK_SNAPSHOT */ },
-			{ ImGuiKey_Pause, 0x13 /* VK_PAUSE */ },
-			{ ImGuiKey_Keypad0, 0x60 /* VK_NUMPAD0 */ },
-			{ ImGuiKey_Keypad1, 0x61 /* VK_NUMPAD1 */ },
-			{ ImGuiKey_Keypad2, 0x62 /* VK_NUMPAD2 */ },
-			{ ImGuiKey_Keypad3, 0x63 /* VK_NUMPAD3 */ },
-			{ ImGuiKey_Keypad4, 0x64 /* VK_NUMPAD4 */ },
-			{ ImGuiKey_Keypad5, 0x65 /* VK_NUMPAD5 */ },
-			{ ImGuiKey_Keypad6, 0x66 /* VK_NUMPAD6 */ },
-			{ ImGuiKey_Keypad7, 0x67 /* VK_NUMPAD7 */ },
-			{ ImGuiKey_Keypad8, 0x68 /* VK_NUMPAD8 */ },
-			{ ImGuiKey_Keypad9, 0x69 /* VK_NUMPAD9 */ },
-			{ ImGuiKey_KeypadDecimal, 0x6E /* VK_DECIMAL */ },
-			{ ImGuiKey_KeypadDivide, 0x6F /* VK_DIVIDE */ },
-			{ ImGuiKey_KeypadMultiply, 0x6A /* VK_MULTIPLY */ },
-			{ ImGuiKey_KeypadSubtract, 0x6D /* VK_SUBTRACT */ },
-			{ ImGuiKey_KeypadAdd, 0x6B /* VK_ADD */ },
-			{ ImGuiMod_Ctrl, 0x11 /* VK_CONTROL */ },
-			{ ImGuiMod_Shift, 0x10 /* VK_SHIFT */ },
-			{ ImGuiMod_Alt, 0x12 /* VK_MENU */ },
-			{ ImGuiMod_Super, 0x5D /* VK_APPS */ },
+			{ ImGuiKey_F1, input::key_f1 },
+			{ ImGuiKey_F2, input::key_f2 },
+			{ ImGuiKey_F3, input::key_f3 },
+			{ ImGuiKey_F4, input::key_f4 },
+			{ ImGuiKey_F5, input::key_f5 },
+			{ ImGuiKey_F6, input::key_f6 },
+			{ ImGuiKey_F7, input::key_f7 },
+			{ ImGuiKey_F8, input::key_f8 },
+			{ ImGuiKey_F9, input::key_f9 },
+			{ ImGuiKey_F10, input::key_f10 },
+			{ ImGuiKey_F11, input::key_f11 },
+			{ ImGuiKey_F12, input::key_f12 },
+			{ ImGuiKey_Apostrophe, input::key_apostrophe },
+			{ ImGuiKey_Comma, input::key_comma },
+			{ ImGuiKey_Minus, input::key_minus },
+			{ ImGuiKey_Period, input::key_period },
+			{ ImGuiKey_Slash, input::key_slash },
+			{ ImGuiKey_Semicolon, input::key_semicolon },
+			{ ImGuiKey_Equal, input::key_plus },
+			{ ImGuiKey_LeftBracket, input::key_left_bracket },
+			{ ImGuiKey_Backslash, input::key_backslash },
+			{ ImGuiKey_RightBracket, input::key_right_bracket },
+			{ ImGuiKey_GraveAccent, input::key_grave_accent },
+			{ ImGuiKey_CapsLock, input::key_caps_lock },
+			{ ImGuiKey_ScrollLock, input::key_scroll_lock },
+			{ ImGuiKey_NumLock, input::key_num_lock },
+			{ ImGuiKey_PrintScreen, input::key_print_screen },
+			{ ImGuiKey_Pause, input::key_pause },
+			{ ImGuiKey_Keypad0, input::key_numpad_0 },
+			{ ImGuiKey_Keypad1, input::key_numpad_1 },
+			{ ImGuiKey_Keypad2, input::key_numpad_2 },
+			{ ImGuiKey_Keypad3, input::key_numpad_3 },
+			{ ImGuiKey_Keypad4, input::key_numpad_4 },
+			{ ImGuiKey_Keypad5, input::key_numpad_5 },
+			{ ImGuiKey_Keypad6, input::key_numpad_6 },
+			{ ImGuiKey_Keypad7, input::key_numpad_7 },
+			{ ImGuiKey_Keypad8, input::key_numpad_8 },
+			{ ImGuiKey_Keypad9, input::key_numpad_9 },
+			{ ImGuiKey_KeypadDecimal, input::key_numpad_decimal },
+			{ ImGuiKey_KeypadDivide, input::key_numpad_divide },
+			{ ImGuiKey_KeypadMultiply, input::key_numpad_multiply },
+			{ ImGuiKey_KeypadSubtract, input::key_numpad_subtract },
+			{ ImGuiKey_KeypadAdd, input::key_numpad_add },
+			{ ImGuiMod_Ctrl, input::key_ctrl },
+			{ ImGuiMod_Shift, input::key_shift },
+			{ ImGuiMod_Alt, input::key_alt },
+			{ ImGuiMod_Super, input::key_application },
 		};
 
 		for (const std::pair<ImGuiKey, unsigned int> &mapping : key_mappings)
@@ -2836,6 +2841,8 @@ void reshade::runtime::draw_gui_statistics()
 					[this](size_t effect_index) { return _effects[effect_index].rendering; }))
 				continue;
 
+			const texture_format_info format_info(tex.format);
+
 			ImGui::PushID(texture_count);
 			ImGui::BeginGroup();
 
@@ -2853,7 +2860,7 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::Text("%u | %u mipmap(s) | %s | %.3f MiB",
 					tex.width,
 					tex.levels - 1,
-					texture_format_info(tex.format).name,
+					format_info.name,
 					memory_size / memory_size_unit);
 				break;
 			case reshadefx::texture_type::texture_2d:
@@ -2861,7 +2868,7 @@ void reshade::runtime::draw_gui_statistics()
 					tex.width,
 					tex.height,
 					tex.levels - 1,
-					texture_format_info(tex.format).name,
+					format_info.name,
 					memory_size / memory_size_unit);
 				break;
 			case reshadefx::texture_type::texture_3d:
@@ -2870,7 +2877,7 @@ void reshade::runtime::draw_gui_statistics()
 					tex.height,
 					tex.depth,
 					tex.levels - 1,
-					texture_format_info(tex.format).name,
+					format_info.name,
 					memory_size / memory_size_unit);
 				break;
 			}
@@ -3000,13 +3007,13 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 0, 0, 1));
 				imgui::toggle_button("R", r, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 				ImGui::PopStyleColor();
-				if (texture_format_info(tex.format).components >= 2)
+				if (format_info.components >= 2)
 				{
 					ImGui::SameLine(0, 1);
 					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 1, 0, 1));
 					imgui::toggle_button("G", g, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 					ImGui::PopStyleColor();
-					if (texture_format_info(tex.format).components >= 3)
+					if (format_info.components >= 3)
 					{
 						ImGui::SameLine(0, 1);
 						ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 0, 1, 1));
@@ -3284,7 +3291,7 @@ void reshade::runtime::draw_gui_addons()
 
 			ImGui::BeginChild(info.name.c_str(), ImVec2(child_window_width, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoScrollbar);
 
-			const bool builtin = (info.file == g_reshade_dll_path.filename().u8string());
+			const bool builtin = !info.external && info.file.empty();
 			const std::string unique_name = builtin ? info.name : info.name + '@' + info.file;
 
 			const auto collapsed_it = std::find(collapsed_or_expanded_addons.begin(), collapsed_or_expanded_addons.end(), unique_name);
@@ -3639,8 +3646,10 @@ void reshade::runtime::draw_variable_editor()
 					std::string category_label(get_localized_annotation(variable, "ui_category", _current_language));
 					if (!_variable_editor_tabs)
 					{
+						size_t num_spaces = 0;
 						for (float x = 0, space_x = ImGui::CalcTextSize(" ").x, width = (ImGui::CalcItemWidth() - ImGui::CalcTextSize(category_label.data()).x - 45) / 2; x < width; x += space_x)
-							category_label.insert(0, " ");
+							num_spaces++;
+						category_label.insert(0, num_spaces, ' ');
 						// Ensure widget ID does not change with varying width
 						category_label += "###" + current_category;
 						// Append a unique value so that the context menu does not contain duplicated widgets when a category is made current multiple times
@@ -4658,7 +4667,7 @@ void reshade::runtime::draw_code_editor(editor_instance &instance)
 bool reshade::runtime::init_imgui_resources()
 {
 	// Adjust default font size based on the vertical resolution
-	if (_font_size == 0)
+	if (_font_size == 13.0f)
 		_imgui_context->Style.FontScaleMain = _height >= 2160 ? 2.0f : _height >= 1440 ? 1.5f : 1.0f;
 
 	const bool has_combined_sampler_and_view = _device->check_capability(api::device_caps::sampler_with_resource_view);

@@ -13,8 +13,8 @@
 
 extern std::filesystem::path g_reshade_base_path;
 
+extern std::string expand_macro_string(const std::string &input, std::vector<std::pair<std::string_view, std::string>> macros = {});
 extern bool resolve_path(std::filesystem::path &path, std::error_code &ec, const std::filesystem::path &base = g_reshade_base_path);
-extern std::string expand_macro_string(const std::string &input, std::vector<std::pair<std::string, std::string>> macros = {});
 
 // Resolve environment variables in input text widgets when tab is pressed
 static auto resolve_macros(ImGuiInputTextCallbackData *data) -> int
@@ -335,11 +335,13 @@ bool reshade::imgui::font_input_box(const char *name, const char *hint, std::fil
 
 	if (item_width > 100.0f)
 	{
-		ImGui::SameLine(0, spacing);
-		ImGui::SetNextItemWidth(5.0f * ImGui::GetFrameHeight());
 		const float size_min = 8;
 		const float size_max = 32;
 		const float size_speed = 1.0f;
+		assert(size >= size_min);
+
+		ImGui::SameLine(0, spacing);
+		ImGui::SetNextItemWidth(5.0f * ImGui::GetFrameHeight());
 		if (slider_with_buttons("##size", ImGuiDataType_Float, &size, 1, &size_speed, &size_min, &size_max, "%.0f"))
 			res = true;
 	}

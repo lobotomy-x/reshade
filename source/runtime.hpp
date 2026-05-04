@@ -170,11 +170,11 @@ namespace reshade
 
 		void reload_effect_next_frame(const char *effect_name) final;
 
-	private:
-		static void check_for_update();
-
 		void load_config();
 		void save_config() const;
+
+	private:
+		static void check_for_update();
 
 		void load_current_preset();
 		void save_current_preset(class ini_file &preset) const;
@@ -474,8 +474,8 @@ namespace reshade
 
 		#pragma region Overlay Settings
 		std::string _selected_language, _current_language;
-		float _font_size = 0;
-		float _editor_font_size = 0;
+		float _font_size = 13.0f;
+		float _editor_font_size = 13.0f;
 		int _style_index = 2;
 		int _editor_style_index = 0;
 		std::filesystem::path _font_path, _default_font_path;
