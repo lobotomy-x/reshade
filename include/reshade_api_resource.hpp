@@ -190,10 +190,10 @@ namespace reshade::api
 		/// </summary>
 		gpu_upload = 6,
 
-		gpu_only = default_,
-		cpu_to_gpu = upload,
-		gpu_to_cpu = readback,
-		cpu_only = scratch,
+		gpu_only [[deprecated("use 'memory_heap::default_' instead")]] = default_,
+		cpu_to_gpu [[deprecated("use 'memory_heap::upload' instead")]] = upload,
+		gpu_to_cpu [[deprecated("use 'memory_heap::readback' instead")]] = readback,
+		cpu_only [[deprecated("use 'memory_heap::scratch' instead")]] = scratch,
 	};
 
 	/// <summary>
